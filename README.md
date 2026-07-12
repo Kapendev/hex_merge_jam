@@ -11,7 +11,9 @@ This project includes and uses:
 - [raylib-d](https://github.com/schveiguy/raylib-d)
 - [Joka](https://github.com/Kapendev/joka)
 - [HoneyGB Palette](https://lospec.com/palette-list/honeygb)
-- [Art by me (Kapendev)](source)
+- [Art by me (Kapendev)](assets)
+- [Music by Pro Sensory](https://opengameart.org/content/july-11)
+- [Sound by Ogrebane](https://opengameart.org/content/teleport-spell)
 
 ## Developer notes
 
