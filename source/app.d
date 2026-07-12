@@ -427,6 +427,15 @@ struct Player {
         if (wasd.y > 0) isLookingAtCamera = true;
         body.position.x += wasd.x * (runKey ? 2 : 1);
 
+        enum playerMoveStartPoint = 16;
+        enum playerMoveEndPoint   = 688;
+        if (body.position.x <= playerMoveStartPoint) {
+            body.position.x = playerMoveStartPoint;
+        }
+        if (body.position.x >= playerMoveEndPoint) {
+            body.position.x = playerMoveEndPoint;
+        }
+
         if (hasCamera) {
             auto potentialCameraTargetGridPoint = (body.bottomPoint / resolution).floor().toIVec();
             cameraTarget = (potentialCameraTargetGridPoint.toVec() * resolution).floor();
