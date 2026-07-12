@@ -1,0 +1,24 @@
+{
+    "name": "game",
+    "description": "A minimal D application.",
+    "license": "proprietary",
+    "authors": ["YOU"],
+    "stringImportPaths": ["source"],
+    "configurations": [
+        {
+            "name": "default",
+            "targetType": "executable",
+            "targetName": "game",
+            "libs": ["raylib"],
+            "lflags-posix": ["-L."],
+            "lflags-osx": ["-rpath", "@executable_path/"],
+            "lflags-linux": ["-rpath=$$ORIGIN"]
+        },
+        {
+            "name": "wasm",
+            "targetType": "staticLibrary",
+            "targetName": "game_wasm",
+            "dflags": ["-i", "-betterC", "-checkaction=halt"]
+        }
+    ]
+}

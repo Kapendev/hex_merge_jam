@@ -1,0 +1,843 @@
+// ---
+// Copyright 2026 Alexandros F. G. Kapretsos
+// SPDX-License-Identifier: MIT
+// Email: alexandroskapretsos@gmail.com
+// Project: https://github.com/Kapendev/joka
+// ---
+
+// NOTE: Last time I added RPGMaker style buttons.
+//   Maybe think about how to do grid layouts and navigation there.
+
+/// The `ui` module includes a UI library.
+module joka.ui;
+
+import joka.math;
+import joka.types;
+
+/// The default control flags.
+enum defaultUiFlags = UiFlag.alignCenter;
+
+alias UiFont    = void*; /// The UI font type.
+alias UiTexture = void*; /// The UI texture type.
+alias UiIconId  = uint;  /// The UI icon ID type.
+
+@trusted nothrow @nogc {
+    /// A function used for getting the width and height of the text.
+    alias UiTextSizeFunc   = IVec2 function(UiFont font, uint fontScale, IStr text);
+    /// A function used for getting the width and height of an icon.
+    alias UiIconIdSizeFunc = IVec2 function(UiIconId iconId);
+}
+
+/// A UI color.
+enum UiColorType : ubyte {
+    border,       /// Default border color.
+    borderOff,    /// Border color on no interaction.
+    icon,         /// Default icon color.
+    iconOff,      /// Icon color on no interaction.
+    text,         /// Default text color.
+    textOff,      /// Text color on no interaction.
+    button,       /// Default button color.
+    buttonOff,    /// Button color on no interaction.
+    buttonHover,  /// Button color on hover.
+    buttonActive, /// Button color on press.
+    buttonFocus,  /// Button color on focus.
+}
+
+/// Static table of UI colors with `UiColorType` being the key.
+alias UiColors = StaticArray!(Rgba, UiColorType.max + 1);
+
+/// A style defines the visual appearance of the UI.
+struct UiStyle {
+    UiFont font;       /// The UI font.
+    UiTexture texture; /// The UI texture.
+    UiColors colors;   /// The UI colors.
+    uint fontScale;    /// The scale of the font.
+    uint border;       /// The size of borders.
+    uint padding;      /// The space between borders.
+}
+
+/// A bitmask type for mouse button state, combining one or more `UiMouseButtonFlag` values.
+alias UiMouseButtonFlags = ubyte;
+/// Individual mouse button flags for use in a `UiMouseButtonFlags` bitmask.
+enum UiMouseButtonFlag : UiMouseButtonFlags {
+    none   = 0x0, /// No mouse button.
+    left   = 0x1, /// The left mouse button.
+    right  = 0x2, /// The right mouse button.
+    middle = 0x4, /// The middle mouse button.
+}
+
+/// A bitmask type for keyboard key state, combining one or more `UiKeyFlag` values.
+alias UiKeyFlags = ushort;
+/// Individual key flags for use in a `UiKeyFlags` bitmask.
+enum UiKeyFlag : UiKeyFlags {
+    none  = 0,       /// No key.
+    left  = 1U << 1, /// The left arrow key.
+    right = 1U << 2, /// The right arrow key.
+    up    = 1U << 3, /// The up arrow key.
+    down  = 1U << 4, /// The down arrow key.
+    tab   = 1U << 5, /// The Tab key.
+    enter = 1U << 6, /// The Enter key.
+    esc   = 1U << 7, /// The Escape key.
+    shift = 1U << 8, /// The Shift key.
+}
+
+/// Controls which axis or axes keyboard navigation responds to.
+enum UiKeyNavigation : ubyte {
+    none,                 /// Keyboard navigation is disabled.
+    verticalOrHorizontal, /// Navigation responds to both axes.
+    vertical,             /// Navigation responds to the vertical axis only.
+    horizontal,           /// Navigation responds to the horizontal axis only.
+}
+
+struct UiInput {
+    IVec2 mousePosition;
+    IVec2 mousePressedPosition;
+    UiMouseButtonFlags mouseButtonDown;
+    UiMouseButtonFlags mouseButtonPressed;
+    UiMouseButtonFlags mouseButtonReleased;
+    bool mouseActionOnRelease;
+
+    UiKeyFlags keyDown;
+    UiKeyFlags keyPressed;
+    UiKeyFlags keyReleased;
+    UiKeyNavigation keyNavigation;
+    UiKeyNavigation nextKeyNavigation;
+
+    @safe nothrow @nogc:
+
+    bool mouseAction(IRect area) {
+        return mouseActionOnRelease
+            ? ((mouseButtonReleased & UiMouseButtonFlag.left) && area.hasPoint(mousePressedPosition))
+            : (mouseButtonPressed & UiMouseButtonFlag.left);
+    }
+
+    bool keyNavigationUpAction() {
+        /*
+        auto goDownwardTab = false;
+        if (keyDown & UiKeyFlag.shift) {
+            goDownwardTab = (keyPressed & UiKeyFlag.tab) != 0;
+        } else {
+        }
+        */
+        auto goDownwardTab = false;
+        with (UiKeyNavigation) final switch (keyNavigation) {
+            case none:
+            case verticalOrHorizontal: return goDownwardTab || (keyPressed & UiKeyFlag.up) || (keyPressed & UiKeyFlag.left);
+            case vertical: return goDownwardTab || ((keyPressed & UiKeyFlag.up) != 0);
+            case horizontal: return goDownwardTab || ((keyPressed & UiKeyFlag.left) != 0);
+        }
+    }
+
+    bool keyNavigationDownAction() {
+        /*
+        auto goForwardTab = false;
+        if (keyDown & UiKeyFlag.shift) {
+        } else {
+            goForwardTab = (keyPressed & UiKeyFlag.tab) != 0;
+        }
+        */
+        auto goForwardTab = (keyPressed & UiKeyFlag.tab) != 0;
+        with (UiKeyNavigation) final switch (keyNavigation) {
+            case none:
+            case verticalOrHorizontal: return goForwardTab || (keyPressed & UiKeyFlag.down) || (keyPressed & UiKeyFlag.right);
+            case vertical: return goForwardTab || (keyPressed & UiKeyFlag.down);
+            case horizontal: return goForwardTab || (keyPressed & UiKeyFlag.right);
+        }
+    }
+
+    bool keyNavigationAction() {
+        return keyNavigationUpAction || keyNavigationDownAction;
+    }
+
+    void clear() {
+        auto tempMousePressedPosition = mousePressedPosition;
+        this = UiInput();
+        mousePressedPosition = tempMousePressedPosition;
+    }
+}
+
+alias UiCommandFlags = ubyte;
+enum UiCommandFlag : UiCommandFlags {
+    none   = 0x00,
+    hover  = 0x01,
+    active = 0x02,
+    focus  = 0x04,
+    off    = 0x08,
+}
+
+enum UiCommandType : ubyte {
+    none,
+    rect,
+    text,
+    icon,
+}
+
+struct UiCommandBase {
+    UiCommandType type;
+    UiColorType colorType;
+}
+
+struct UiCommandRect {
+    UiCommandBase base;
+    UiCommandFlags flags;
+    ushort border;
+    IRect data;
+    alias data this;
+}
+
+struct UiCommandText {
+    UiCommandBase base;
+    IRect area;
+    IStr data;
+    alias data this;
+}
+
+struct UiCommandIcon {
+    UiCommandBase base;
+    IRect area;
+    UiIconId data;
+    alias data this;
+}
+
+union UiCommand {
+    UiCommandType type;
+    UiCommandBase base;
+    UiCommandRect rect;
+    UiCommandText text;
+    UiCommandIcon icon;
+}
+
+struct UiCommands {
+    UiCommand[] data;
+    Sz length;
+    alias items this;
+
+    @safe nothrow @nogc:
+
+    pragma(inline, true) @trusted {
+        UiCommand[] items() {
+            return data.ptr[0 .. length];
+        }
+
+        UiCommand* ptr() {
+            return data.ptr;
+        }
+
+        bool isEmpty() {
+            return length == 0;
+        }
+
+        Sz capacity() {
+            return data.length;
+        }
+    }
+
+    bool appendBlank() {
+        if (length >= capacity) return true;
+        length += 1;
+        return false;
+    }
+
+    @trusted
+    bool appendRef(ref UiCommand command) {
+        auto error = appendBlank();
+        if (!error) data.ptr[length - 1] = command;
+        return error;
+    }
+
+    void clear() {
+        length = 0;
+    }
+
+    bool nextIsRectWith(Sz currentIndex, UiCommandFlags flags) {
+        if (currentIndex + 1 >= length) return false;
+        auto next = &items[currentIndex + 1];
+        return next.type == UiCommandType.rect && next.rect.flags & flags;
+    }
+}
+
+/// The result of a UI control function.
+alias UiResultFlags = ubyte;
+/// The result values of a UI control function.
+enum UiResultFlag : UiResultFlags {
+    none         = 0x00, /// None.
+    active       = 0x01, /// Control is active (e.g. active window).
+    submitted    = 0x02, /// Control value submitted (e.g. clicked button).
+    changed      = 0x04, /// Control value changed (e.g. modified text).
+    pressedLeft  = 0x08, /// Pressed left on a active control in vertical navigation mode.
+    pressedRight = 0x10, /// Pressed right on a active control in vertical navigation mode.
+    pressedUp    = 0x20, /// Pressed up on a active control in horizontal navigation mode.
+    pressedDown  = 0x40, /// Pressed down on a active control in horizontal navigation mode.
+}
+
+/// The option flags of a UI control function.
+alias UiFlags = ubyte;
+/// The option flag values of a UI control function.
+enum UiFlag : UiFlags {
+    none            = 0x0000, /// None.
+    alignCenter     = 0x0001, /// Align to the center.
+    alignRight      = 0x0002, /// Align to the right.
+    turnOff         = 0x0004, /// Turn off interactions.
+    checkNavigation = 0x0008, /// Include key actions in result flags.
+}
+
+struct UiFocusState {
+    int currentFocusId;
+    int nextFocusId;       // Can be used to force a new current ID for the next frame.
+    IVec2 nextFocusIdWrap; // Can be used to force a specific start and end value when wrapping at the end.
+    int focusIdCounter;
+    bool focusIsActive;
+
+    @safe nothrow @nogc:
+
+    bool isFocused(int id) {
+        return focusIsActive && currentFocusId == id;
+    }
+
+    void setCurrentFocusId(int id) {
+        currentFocusId = id;
+        focusIsActive = true;
+    }
+
+    void wrapCurrentFocusIdIfNeeded(int startInclusive, int endInclusive) {
+        if (focusIdCounter == 0) return;
+        if (currentFocusId < startInclusive) currentFocusId = endInclusive;
+        if (currentFocusId > endInclusive) currentFocusId = startInclusive;
+    }
+}
+
+/// A UI focus grabber.
+struct ScopedUiFocus {
+    UiContext* _uiContext;
+    int _previousFocusIdCounter;
+    bool _canIgnore;
+
+    @safe nothrow @nogc:
+    @disable this();
+
+    @trusted
+    this(ref UiContext context, UiKeyNavigation keyNavigation = UiKeyNavigation.none, bool canIgnore = false) {
+        _uiContext = &context;
+        _previousFocusIdCounter = context.focusState.focusIdCounter;
+        _canIgnore = canIgnore;
+        if (_canIgnore) return;
+        _uiContext.input.nextKeyNavigation = keyNavigation;
+    }
+
+    ~this() {
+        if (_canIgnore) return;
+        auto count = _uiContext.focusState.focusIdCounter - _previousFocusIdCounter;
+        if (count && _uiContext.input.keyNavigationAction) {
+            _uiContext.focusState.nextFocusIdWrap = IVec2(_previousFocusIdCounter + 1, _uiContext.focusState.focusIdCounter);
+        }
+    }
+}
+
+/// A UI layout helper.
+struct UiLayout {
+    IRect area;
+    int slice;
+    int spacing;
+    bool isVertical;
+    bool fromRightOrBottom;
+
+    @safe nothrow @nogc:
+
+    pragma(inline, true);
+    int w() {
+        return area.w;
+    }
+
+    pragma(inline, true);
+    int h() {
+        return area.h;
+    }
+
+    IRect pop(bool span = false) {
+        if (!area.hasSize) return IRect();
+        if (span) {
+            return isVertical ? area.subTop(area.h) : area.subLeft(area.w);
+        }
+        if (isVertical) {
+            return fromRightOrBottom ? area.subBottom(slice, spacing) : area.subTop(slice, spacing);
+        } else {
+            return fromRightOrBottom ? area.subRight(slice, spacing) : area.subLeft(slice, spacing);
+        }
+    }
+}
+
+static struct UiControlInteraction {
+    bool submittedByKeyboard;
+    bool hover;
+    bool active;
+    bool focus;
+    uint focusId;
+    bool mouseAction;
+}
+
+/// The UI context.
+struct UiContext {
+    UiCommands commands;
+    UiFocusState focusState;
+    UiTextSizeFunc textSize; /// The function used for getting the size of the text.
+    UiIconIdSizeFunc iconSize;
+    UiStyle* style;
+    UiStyle _style;
+    UiInput input;
+    bool manualBordersMode;
+
+    char[] charDataBuffer;
+    Sz charDataLength;
+    int charHeight;
+    int charOffset;
+
+    @safe nothrow @nogc:
+
+    this(UiTextSizeFunc textSizeFunc, UiCommand[] commandsBuffer, char[] charDataBuffer, UiFont font, uint fontScale = 1, UiIconIdSizeFunc iconSizeFunc = null) {
+        ready(textSizeFunc, commandsBuffer, charDataBuffer, font, fontScale, iconSizeFunc);
+    }
+
+    void ready(UiTextSizeFunc textSizeFunc, UiCommand[] commandsBuffer, char[] charDataBuffer, UiFont font, uint fontScale = 1, UiIconIdSizeFunc iconSizeFunc = null) {
+        textSize = textSizeFunc ? textSizeFunc : &tempUiTextSizeFunc;
+        setBuffers(commandsBuffer, charDataBuffer);
+        restoreDefaultStyle();
+        applyDefaultStyle();
+        setFont(font, fontScale);
+        iconSize = iconSizeFunc;
+    }
+
+    void setBuffers(UiCommand[] newCommandsBuffer, char[] newCharDataBuffer) {
+        commands = UiCommands(newCommandsBuffer);
+        charDataBuffer = newCharDataBuffer;
+    }
+
+    void setFont(UiFont font, uint fontScale = 1) {
+        style.font = font;
+        style.fontScale = fontScale;
+        charHeight = textSize(font, fontScale, "A").y;
+        charOffset = (textSize(font, fontScale, "A\nA").y) - charHeight * 2;
+    }
+
+    void applyDefaultStyle() {
+        with (UiColorType) {
+            // Borders & Backgrounds
+            style.colors[border]       = Rgba(40,  44,  52,  255);
+            style.colors[borderOff]    = Rgba(33,  37,  43,  255);
+            // Foreground Elements
+            style.colors[icon]         = Rgba(255, 255, 255, 180); // Slightly more transparent
+            style.colors[iconOff]      = Rgba(90,  95,  110, 255);
+            style.colors[text]         = Rgba(210, 215, 225, 255);
+            style.colors[textOff]      = Rgba(90,  95,  110, 255);
+            // Interaction Elements
+            style.colors[button]       = Rgba(55,  61,  72,  255);
+            style.colors[buttonOff]    = Rgba(45,  50,  60,  255);
+            style.colors[buttonHover]  = Rgba(80,  90,  110, 255);
+            style.colors[buttonActive] = Rgba(95,  105, 130, 255);
+            style.colors[buttonFocus]  = Rgba(70,  80,  100, 255);
+        }
+        style.border = 1;
+        style.padding = 5;
+    }
+
+    @trusted
+    void restoreDefaultStyle() {
+        style = &_style;
+    }
+
+    ScopedUiFocus captureFocus(UiKeyNavigation keyNavigation = UiKeyNavigation.none, bool canIgnore = false) {
+        return ScopedUiFocus(this, keyNavigation, canIgnore);
+    }
+
+    static
+    UiLayout _row(IRect area, int areaCount, int spacing, bool fromRight, int infiniteSlice) {
+        if (infiniteSlice && !fromRight) {
+            auto infiniteArea = area;
+            infiniteArea.w = int.max;
+            return UiLayout(infiniteArea, infiniteSlice, spacing, false, fromRight);
+        } else {
+            return UiLayout(area, area.sliceX(areaCount, spacing), spacing, false, fromRight);
+        }
+    }
+
+    static
+    UiLayout rowItems(IRect area, int count, int spacing, bool fromRight = false) {
+        return _row(area, count, spacing, fromRight, 0);
+    }
+
+    static
+    UiLayout rowSlice(IRect area, int slice, int spacing) {
+        return _row(area, 0, spacing, false, slice);
+    }
+
+    static
+    UiLayout _col(IRect area, int areaCount, int spacing, bool fromBottom, int infiniteSlice) {
+        if (infiniteSlice && !fromBottom) {
+            auto infiniteArea = area;
+            infiniteArea.h = int.max;
+            return UiLayout(infiniteArea, infiniteSlice, spacing, true, fromBottom);
+        } else {
+            return UiLayout(area, area.sliceY(areaCount, spacing), spacing, true, fromBottom);
+        }
+    }
+
+    static
+    UiLayout colItems(IRect area, int count, int spacing, bool fromBottom = false) {
+        return _col(area, count, spacing, fromBottom, 0);
+    }
+
+    static
+    UiLayout colSlice(IRect area, int slice, int spacing) {
+        return _col(area, 0, spacing, false, slice);
+    }
+
+    @trusted
+    IStrz makeStrzCopy(IStr text) {
+        auto charsNeeded = text.length + 1;
+        auto newCharDataLength = charDataLength + charsNeeded;
+        if (newCharDataLength > charDataBuffer.length) return null;
+
+        auto result = charDataBuffer.ptr + charDataLength;
+        jokaMemcpy(result, text.ptr, text.length);
+        result[text.length] = '\0';
+        charDataLength = newCharDataLength;
+        return result;
+    }
+
+    @trusted
+    void drawRect(IRect area, UiColorType colorType, bool hover, bool active, bool focus, bool off, uint border) {
+        if (!area.hasSize) return;
+
+        auto command = UiCommand();
+        command.base.type = UiCommandType.rect;
+        command.base.colorType = colorType;
+        command.rect.border = cast(ushort) border;
+        command.rect.data = area;
+        if (hover)  command.rect.flags |= UiCommandFlag.hover;
+        if (active) command.rect.flags |= UiCommandFlag.active;
+        if (focus)  command.rect.flags |= UiCommandFlag.focus;
+        if (off)    command.rect.flags |= UiCommandFlag.off;
+        commands.appendRef(command);
+    }
+
+    void drawBorder(IRect area, bool off, uint border) {
+        if (border == 0) return;
+        auto borderArea = area;
+        borderArea.addAll(border);
+        drawRect(borderArea, off ? UiColorType.borderOff : UiColorType.border, false, false, false, off, border);
+    }
+
+    void drawBox(IRect area, UiColorType colorType, bool hover, bool active, bool focus, bool off, uint border) {
+        if (manualBordersMode) {
+            drawRect(area, colorType, hover, active, focus, off, border);
+        } else {
+            drawBorder(area, off, border);
+            drawRect(area, colorType, hover, active, focus, off, 0);
+        }
+    }
+
+    void drawIcon(UiIconId iconId, UiColorType colorType, IRect area, UiFlags optionFlags) {
+        if (iconId == 0) return;
+
+        auto command = UiCommand();
+        command.base.type = UiCommandType.icon;
+        command.base.colorType = colorType;
+        command.icon.data = iconId;
+        auto iconArea = IRect(iconSize(iconId) * style.fontScale);
+        iconArea.y = area.centerPoint.y - iconArea.h / 2;
+        if (optionFlags & UiFlag.alignCenter) {
+            iconArea.x = area.centerPoint.x - iconArea.w / 2;
+        } else if (optionFlags & UiFlag.alignRight) {
+            iconArea.x = area.rightPoint.x - iconArea.w - style.padding;
+        } else {
+            iconArea.x = area.x + style.padding;
+        }
+        command.icon.area = iconArea;
+        commands.appendRef(command);
+    }
+
+    @trusted
+    void drawText(IStr text, UiColorType colorType, IRect area, UiFlags optionFlags) {
+        if (text.length == 0) return;
+
+        auto baseTextArea = IRect(textSize(style.font, style.fontScale, text));
+        baseTextArea.y = area.centerPoint.y - baseTextArea.h / 2;
+        if (optionFlags & UiFlag.alignCenter) {
+            baseTextArea.x = area.centerPoint.x - baseTextArea.w / 2;
+        } else if (optionFlags & UiFlag.alignRight) {
+            baseTextArea.x = area.rightPoint.x - baseTextArea.w - style.padding;
+        } else {
+            baseTextArea.x = area.x + style.padding;
+        }
+
+        Sz lineStartIndex;
+        foreach (i, c; text) {
+            if (c == '\n' || i == text.length - 1) {
+                auto line = text[lineStartIndex .. i + (i == text.length - 1)];
+                auto lineArea = baseTextArea;
+                lineArea.w = textSize(style.font, style.fontScale, line).x;
+                lineArea.h = charHeight;
+                lineArea.y += lineStartIndex ? (lineArea.h + charOffset) : 0;
+                // NOTE: Could maybe refactor that alignment part into a function.
+                if (optionFlags & UiFlag.alignCenter) {
+                    lineArea.x = baseTextArea.centerPoint.x - lineArea.w / 2;
+                } else if (optionFlags & UiFlag.alignRight) {
+                    lineArea.x = baseTextArea.rightPoint.x - lineArea.w;
+                } else {
+                    lineArea.x = baseTextArea.x;
+                }
+                auto lineCommand = UiCommand();
+                lineCommand.base.type = UiCommandType.text;
+                lineCommand.base.colorType = colorType;
+                lineCommand.text.area = lineArea;
+                lineCommand.text.data = makeStrzCopy(line)[0 .. line.length];
+                if (lineCommand.text.data.ptr == null) return;
+                commands.appendRef(lineCommand);
+                lineStartIndex = i + 1;
+            }
+        }
+    }
+
+    void drawLabelContent(IRect area, IStr text, UiIconId iconId = 0, UiFlags optionFlags = defaultUiFlags) {
+        auto iconColorType = (optionFlags & UiFlag.turnOff) ? UiColorType.iconOff : UiColorType.icon;
+        auto textColorType = (optionFlags & UiFlag.turnOff) ? UiColorType.textOff : UiColorType.text;
+        if (iconId && iconSize && !iconSize(iconId).isZero) {
+            if (optionFlags & UiFlag.alignCenter) {
+                drawIcon(iconId, iconColorType, area, optionFlags);
+            } else if (optionFlags & UiFlag.alignRight) {
+                auto newArea = area;
+                drawIcon(iconId, iconColorType, newArea.subRight(iconSize(iconId).x), optionFlags);
+                newArea.subRight(style.padding);
+                drawText(text, textColorType, newArea, optionFlags);
+            } else {
+                auto newArea = area;
+                drawIcon(iconId, iconColorType, newArea.subLeft(iconSize(iconId).x), optionFlags);
+                newArea.subLeft(style.padding);
+                drawText(text, textColorType, newArea, optionFlags);
+            }
+        } else {
+            drawText(text, textColorType, area, optionFlags);
+        }
+    }
+
+    void handleKeyNavigationWithoutWrappingCurrentFocusId() {
+        if (input.keyPressed & UiKeyFlag.tab) focusState.focusIsActive = true;
+        if (input.keyPressed & UiKeyFlag.esc) focusState.focusIsActive = false;
+        if (focusState.focusIsActive) {
+            if (input.keyNavigationUpAction) {
+                focusState.currentFocusId -= 1;
+            } else if (input.keyNavigationDownAction) {
+                focusState.currentFocusId += 1;
+            }
+        }
+    }
+
+    void begin() {
+        commands.clear();
+        charDataLength = 0;
+
+        focusState.focusIdCounter = 0;
+        if (focusState.nextFocusId) {
+            focusState.setCurrentFocusId(focusState.nextFocusId);
+            focusState.nextFocusId = 0;
+        }
+
+        if (input.mouseButtonPressed & UiMouseButtonFlag.left) {
+            input.mousePressedPosition = input.mousePosition;
+            focusState.focusIsActive = false;
+        }
+    }
+
+    void end() {
+        if (input.nextKeyNavigation) {
+            // NOTE: This part depending on a temp variable is a bit ugly. Maybe change that later.
+            auto previousKeyNavigation = input.keyNavigation;
+            input.keyNavigation = input.nextKeyNavigation;
+            handleKeyNavigationWithoutWrappingCurrentFocusId();
+            input.keyNavigation = previousKeyNavigation;
+            input.nextKeyNavigation = UiKeyNavigation.none;
+        } else {
+            handleKeyNavigationWithoutWrappingCurrentFocusId();
+        }
+
+        if (focusState.nextFocusIdWrap.isZero) {
+            focusState.wrapCurrentFocusIdIfNeeded(1, focusState.focusIdCounter);
+        } else {
+            focusState.wrapCurrentFocusIdIfNeeded(focusState.nextFocusIdWrap.x, focusState.nextFocusIdWrap.y);
+            focusState.nextFocusIdWrap = IVec2();
+        }
+        input.clear();
+    }
+
+    UiControlInteraction registerControlInteraction(IRect area, UiFlags optionFlags) {
+        auto result = UiControlInteraction();
+        result.focusId = ++focusState.focusIdCounter; // NOTE: Will never have a value of zero.
+        result.hover = area.hasPoint(input.mousePosition) && !(optionFlags & UiFlag.turnOff) ;
+        result.active = result.hover && (input.mouseButtonDown & UiMouseButtonFlag.left) && !(optionFlags & UiFlag.turnOff) ;
+        if (result.hover && (input.mouseButtonPressed & UiMouseButtonFlag.left)) {
+            focusState.currentFocusId = result.focusId;
+            focusState.focusIsActive = false;
+        }
+        result.focus = focusState.isFocused(result.focusId) && !(optionFlags & UiFlag.turnOff);
+        result.submittedByKeyboard = result.focus && (input.keyPressed & UiKeyFlag.enter);
+        result.active = result.active || (result.focus && (input.keyDown & UiKeyFlag.enter));
+        result.mouseAction = input.mouseAction(area);
+        return result;
+    }
+
+    UiResultFlags handleButtonInteraction(UiControlInteraction interaction, IRect area, UiFlags optionFlags) {
+        auto result = UiResultFlags();
+        if (interaction.hover && interaction.mouseAction || interaction.submittedByKeyboard) result |= UiResultFlag.submitted;
+        if (interaction.focus && (optionFlags & UiFlag.checkNavigation)) {
+            with (UiKeyNavigation) final switch (input.nextKeyNavigation) {
+                case none:
+                case verticalOrHorizontal: break;
+                case vertical:
+                    result |= (input.keyPressed & UiKeyFlag.left) ? UiResultFlag.pressedLeft : 0;
+                    result |= (input.keyPressed & UiKeyFlag.right) ? UiResultFlag.pressedRight : 0;
+                    break;
+                case horizontal:
+                    result |= (input.keyPressed & UiKeyFlag.up) ? UiResultFlag.pressedUp : 0;
+                    result |= (input.keyPressed & UiKeyFlag.down) ? UiResultFlag.pressedDown : 0;
+                    break;
+            }
+        }
+        return result;
+    }
+
+    UiColorType handleButtonColorType(UiControlInteraction interaction, UiFlags optionFlags) {
+        auto result = interaction.active
+            ? UiColorType.buttonActive
+            : ( interaction.focus
+                ? UiColorType.buttonFocus
+                : (interaction.hover ? UiColorType.buttonHover : UiColorType.button)
+            );
+        if (optionFlags & UiFlag.turnOff) result = UiColorType.buttonOff;
+        return result;
+    }
+
+    UiResultFlags label(IRect area, IStr text, UiIconId iconId = 0, UiFlags optionFlags = defaultUiFlags) {
+        drawLabelContent(area, text, iconId, optionFlags);
+        return UiResultFlag.none;
+    }
+
+    UiResultFlags icon(IRect area, UiIconId iconId, UiFlags optionFlags = defaultUiFlags) {
+        return label(area, "", iconId, optionFlags);
+    }
+
+    UiResultFlags buttonWithIcon(IRect area, IStr text, UiIconId iconId, UiFlags optionFlags = defaultUiFlags) {
+        auto interaction = registerControlInteraction(area, optionFlags);
+        auto result = handleButtonInteraction(interaction, area, optionFlags);
+        auto colorType = handleButtonColorType(interaction, optionFlags);
+        drawBox(area, colorType, interaction.hover, interaction.active, interaction.focus, (optionFlags & UiFlag.turnOff) != 0, style.border);
+        drawLabelContent(area, text, iconId, optionFlags);
+        return result;
+    }
+
+    UiResultFlags button(IRect area, IStr text, UiFlags optionFlags = defaultUiFlags) {
+        return buttonWithIcon(area, text, 0, optionFlags);
+    }
+
+    UiResultFlags stepper(T)(IRect area, ref T number, T startInclusive, T stopInclusive, T step, IStr info = "", bool canLoop = true, IStr fmtStr = defaultAsciiFmtArgStr, UiFlags optionFlags = defaultUiFlags) {
+        auto flags = UiResultFlags();
+        if (info.length) {
+            auto interaction = registerControlInteraction(area, optionFlags);
+            flags = handleButtonInteraction(interaction, area, optionFlags);
+            auto colorType = handleButtonColorType(interaction, optionFlags);
+            drawBox(area, colorType, interaction.hover, interaction.active, interaction.focus, (optionFlags & UiFlag.turnOff) != 0, style.border);
+            auto labelArea = area;
+            auto labelFlags = optionFlags;
+            labelFlags &= ~(UiFlag.alignCenter | UiFlag.alignRight);
+            drawLabelContent(labelArea.subLeft(area.w / 2), info, 0, labelFlags);
+            drawLabelContent(labelArea, (fmtStr.findStart(defaultAsciiFmtArgStr) != -1) ? fmtStr.fmt(number) : fmtStr, 0, labelFlags | UiFlag.alignRight);
+        } else {
+            flags = button(area, (fmtStr.findStart(defaultAsciiFmtArgStr) != -1) ? fmtStr.fmt(number) : fmtStr, optionFlags | UiFlag.checkNavigation);
+        }
+        if (!flags) return UiResultFlag.none;
+
+        if (flags & (UiResultFlag.pressedUp | UiResultFlag.pressedRight | UiResultFlag.submitted)) {
+            static if (is(T == bool)) {
+                number = !number;
+            } else {
+                if (number + step > stopInclusive) {
+                    number = canLoop ? startInclusive : stopInclusive;
+                } else {
+                    number += step;
+                }
+            }
+        } else if (flags & (UiResultFlag.pressedDown | UiResultFlag.pressedLeft)) {
+            static if (is(T == bool)) {
+                number = !number;
+            } else {
+                if (number < startInclusive + step) {
+                    number = canLoop ? stopInclusive : startInclusive;
+                } else {
+                    number -= step;
+                }
+            }
+        }
+        return flags;
+    }
+
+    UiResultFlags stepper(IRect area, ref int number, IStr info = "", bool canLoop = true, IStr fmtStr = "{}%", UiFlags optionFlags = defaultUiFlags) {
+        return stepper(area, number, 0, 100, 20, info, canLoop, fmtStr, optionFlags);
+    }
+
+    UiResultFlags cycler(T)(IRect area, ref T enumNumber, IStr info = "", bool canLoop = true, bool canKeepFirstChar = false, UiFlags optionFlags = defaultUiFlags) {
+        auto enumText = enumNumber.toStr();
+        if (!canKeepFirstChar) enumText = "{}{}".fmt(enumText[0].toUpper, enumText[1 .. $]);
+
+        auto number = cast(int) enumNumber;
+        auto flags = stepper(area, number, cast(int) T.min, cast(int) T.max, 1, info, canLoop, enumText, optionFlags);
+        enumNumber = cast(T) number;
+        return flags;
+    }
+
+    UiResultFlags toggle(IRect area, ref bool state, IStr info = "", IStr offText = "OFF", IStr onText = "ON", UiFlags optionFlags = defaultUiFlags) {
+        return stepper(area, state, false, true, true, info, true, state ? onText : offText, optionFlags);
+    }
+}
+
+@safe nothrow @nogc
+IVec2 tempUiTextSizeFunc(UiFont font, uint fontScale, IStr text) {
+    auto charWidth = 8 * fontScale;
+    auto charHeight = 8 * fontScale;
+    auto maxHorizontalLength = 0;
+    auto maxVerticalLength = 1;
+    auto horizontalLengthCounter = 0;
+
+    foreach (c; text) {
+        if (c == '\n') {
+            if (maxHorizontalLength < horizontalLengthCounter) maxHorizontalLength = horizontalLengthCounter;
+            maxVerticalLength += 1;
+            horizontalLengthCounter = 0;
+        } else {
+            horizontalLengthCounter += 1;
+        }
+    }
+    if (maxHorizontalLength < horizontalLengthCounter) maxHorizontalLength = horizontalLengthCounter;
+    if (horizontalLengthCounter == 0) maxVerticalLength = 0;
+
+    return IVec2(
+        maxHorizontalLength ? (maxHorizontalLength * charWidth - 1) : 0,
+        maxVerticalLength ? (maxVerticalLength * charHeight - 1) : 0,
+    );
+}
+
+// UI test.
+unittest {
+    auto ui = UiContext(null, null, null, null);
+
+    ui.begin();
+    ui.button(IRect(0, 0, 60, 20), "My Button");
+    ui.end();
+
+    assert(ui.commands.length == 0);
+    foreach (ref command; ui.commands) {
+        with (UiCommandType) final switch (command.type) {
+            case none: break;
+            case rect: break;
+            case text: break;
+            case icon: break;
+        }
+    }
+}

@@ -1,0 +1,2709 @@
+// ---
+// Copyright 2026 Alexandros F. G. Kapretsos
+// SPDX-License-Identifier: MIT
+// Email: alexandroskapretsos@gmail.com
+// Project: https://github.com/Kapendev/joka
+// ---
+
+/// The `types` module provides basic type definitions, compile-time functions and ASCII string helpers.
+module joka.types;
+
+version (WebAssembly) {
+    version = JokaTypesStubs;
+}
+
+alias Sz = size_t;    /// The result of sizeof.
+alias Pd = ptrdiff_t; /// The result of pointer math.
+
+alias Str    = char[];         /// A string slice of chars.
+alias Str16  = wchar[];        /// A string slice of wchars.
+alias Str32  = dchar[];        /// A string slice of dchars.
+alias IStr   = const(char)[];  /// A string slice of constant chars.
+alias IStr16 = const(wchar)[]; /// A string slice of constant wchars.
+alias IStr32 = const(dchar)[]; /// A string slice of constant dchars.
+
+alias Strz    = char*;         /// A C string of chars.
+alias Strz16  = wchar*;        /// A C string of wchars.
+alias Strz32  = dchar*;        /// A C string of dchars.
+alias IStrz   = const(char)*;  /// A C string of constant chars.
+alias IStrz16 = const(wchar)*; /// A C string of constant wchars.
+alias IStrz32 = const(dchar)*; /// A C string of constant dchars.
+
+alias UnionType = ubyte; /// The common union type for all tagged unions.
+alias Gen       = uint;  /// The type of a generation.
+
+/// The type of compile time alias arguments.
+alias AliasArgs(A...) = A;
+
+/// Callback that can be used for basic printing. Should works like the echo command in POS*X compliant shells.
+alias EchonFunc = void function(IStr[] text...) @safe nothrow @nogc;
+
+enum kilobyte = 1024;            /// The size of one kilobyte in bytes.
+enum megabyte = 1024 * kilobyte; /// The size of one megabyte in bytes.
+enum gigabyte = 1024 * megabyte; /// The size of one gigabyte in bytes.
+enum terabyte = 1024 * gigabyte; /// The size of one terabyte in bytes.
+enum petabyte = 1024 * terabyte; /// The size of one petabyte in bytes.
+enum exabyte  = 1024 * petabyte; /// The size of one exabyte in bytes.
+
+/// A type representing error values.
+enum Fault : ubyte {
+    none,          /// Not an error.
+    some,          /// A generic error.
+    bug,           /// An implementation error.
+    assertion,     /// An assertion error.
+    invalid,       /// An invalid data error.
+    overflow,      /// An overflow error.
+    range,         /// A range violation error.
+    timeout,       /// A timeout error.
+    interrupted,   /// An interrupted error.
+    unconfigured,  /// A missing configuration error.
+    unauthorized,  /// A permission or access rights error.
+    unrecognized,  /// An unknown or unsupported type error.
+    cannotFind,    /// A wrong path error.
+    cannotCreate,  /// A creation permissions error.
+    cannotDestroy, /// A destruction permissions error.
+    cannotOpen,    /// An open permissions error.
+    cannotClose,   /// A close permissions error.
+    cannotRead,    /// A read permissions error.
+    cannotWrite,   /// A write permissions error.
+}
+
+/// A type marker for types that support "no data" things. The Rust `Result` type is a good example of working with types like this.
+struct NoData {}
+/// An attribute for types that support hiding members. Can be used for UI elements, for example.
+struct hiddenMember {}
+/// An attribute for types that support requiring members. Can be used for configurations, for example.
+struct requiredMember {}
+
+/// A value paired with its iteration index.
+struct IndexedValue(V) {
+    Sz index; /// The index of the value.
+    V value;  /// The value.
+    alias value this;
+}
+
+/// A value paired with its associated key.
+struct KeyValuePair(K, V) {
+    K key;   /// The key of the value.
+    V value; /// The value.
+    alias value this;
+}
+
+/// A generational index.
+struct GenIndex {
+    Sz value;       /// The index value.
+    Gen generation; /// The generation counter.
+
+    enum invalidData  = Gen.max; /// Data indicating an error.
+    enum invalidIndex = GenIndex(invalidData, invalidData); /// An invalid generational index.
+
+    pragma(inline, true) @safe nothrow @nogc:
+
+    /// Returns true if the index is invalid.
+    bool isNone() {
+        return generation == invalidData;
+    }
+
+    /// Returns true if the index is valid.
+    bool isSome() {
+        return generation != invalidData;
+    }
+}
+
+/// A static array. It exists because of a BetterC + `struct[N]` issue (missing symbol).
+struct StaticArray(T, Sz N) {
+    align(T.alignof) ubyte[T.sizeof * N] _data;
+    alias items this;
+
+    enum length   = N; /// The length of the array.
+    enum capacity = N; /// The capacity of the array.
+
+    @trusted nothrow @nogc:
+
+    /// Makes a static array. Passing a slice with a length larger than the array capacity will throw an error.
+    this(const(T)[] items...) {
+        if (items.length > N) assert(0, "Too many items passed to the static array.");
+        foreach (i; 0 .. N) (cast(T*) _data.ptr)[i] = cast(T) items[i];
+    }
+
+    /// Returns the items of the array.
+    pragma(inline, true)
+    inout(T)[] items() inout {
+        return (cast(T*) _data.ptr)[0 .. N];
+    }
+}
+
+/// A slice using a foreign memory layout. Useful for interfacing with languages that define slices differently.
+struct ForeignSlice(T) {
+    T* ptr;    /// The pointer of the slice.
+    Sz length; /// The length of the slice.
+    alias items this;
+
+    pragma(inline, true) @trusted nothrow @nogc:
+
+    /// Creates a slice from parts.
+    this(T* ptr, Sz length) {
+        this.ptr = ptr;
+        this.length = length;
+    }
+
+    /// Copies the given D slice.
+    this(T[] slice) {
+        opAssign(slice);
+    }
+
+    /// Copies the given D slice.
+    void opAssign(T[] slice) {
+        ptr = slice.ptr;
+        length = slice.length;
+    }
+
+    /// Returns the items of the slice.
+    inout(T)[] items() inout {
+        return ptr[0 .. length];
+    }
+}
+
+/// A generic static bit set.
+struct GBitSet(T) if (__traits(isUnsigned, T)) {
+    T bits; /// The underlying bit storage.
+
+    enum zero     = cast(T) 0;                  /// Typed zero constant.
+    enum one      = cast(T) 1;                  /// Typed one constant.
+    enum capacity = cast(Sz) (bits.sizeof * 8); /// The capacity of the bit set.
+
+    @trusted nothrow @nogc:
+
+    /// Returns the number of set bits.
+    Sz length() {
+        auto n = bits;
+        auto c = zero;
+        while (n) { n &= cast(T) (n - one); c += 1; } // Brian Kernighan's trick.
+        return cast(Sz) c;
+    }
+
+    /// Same as length. Returns the number of set bits.
+    alias popcount = length;
+
+    /// Returns a range over the indices of all set bits.
+    auto activeBits() {
+        static struct Range {
+            T remaining;
+
+            @safe nothrow @nogc:
+
+            bool empty() {
+                return remaining == zero;
+            }
+
+            Sz front() {
+                auto result = Sz(0);
+                auto n = remaining;
+                while (!(n & one)) { n >>= one; result += 1; }
+                return result;
+            }
+
+            void popFront() {
+                remaining &= cast(T) (remaining - one);
+            }
+        }
+
+        return Range(bits);
+    }
+
+    /// Returns the index of the lowest active bit, or -1 if no bits are set.
+    int findLowestActiveBit() {
+        foreach (index; activeBits) return cast(int) index;
+        return -1;
+    }
+
+    /// Returns the index of the highest active bit, or -1 if no bits are set.
+    int findHighestActiveBit() {
+        auto high = Sz.max;
+        foreach (index; activeBits) high = index;
+        return (high == Sz.max) ? -1 : cast(int) high;
+    }
+
+    pragma(inline, true) @trusted nothrow @nogc:
+
+    /// Returns true if any bit is set.
+    bool any() {
+        return bits != zero;
+    }
+
+    /// Returns true if no bit is set.
+    bool none() {
+        return bits == zero;
+    }
+
+    /// Returns true if all bits are set.
+    bool all() {
+        return bits == T.max;
+    }
+
+    /// Flips the bit at the given index.
+    void flip(Sz i) {
+        bits ^= cast(T) (one << i);
+    }
+
+    /// Sets all bits.
+    void fill() {
+        bits = T.max;
+    }
+
+    /// Clears all bits.
+    void clear() {
+        bits = zero;
+    }
+
+    /// Returns the value of a bit.
+    bool opIndex(Sz i) {
+        assert(i < capacity, indexErrorMessage(i));
+        return (bits >> i) & one;
+    }
+
+    /// Sets the value of a bit.
+    void opIndexAssign(const(bool) rhs, Sz i) {
+        assert(i < capacity, indexErrorMessage(i));
+        bits = cast(T) (  rhs ? (bits | (one << i)) : (bits & ~(one << i))  );
+    }
+}
+
+/// The common bit set data type.
+alias BitSetCommonDataType = ulong;
+/// The common bit set type.
+alias BitSet = GBitSet!BitSetCommonDataType;
+
+/// Represents an optional value with an error code. Errors are referred to as faults in Joka.
+/// The default value is an empty value.
+struct Maybe(T) {
+    Fault _fault = Fault.some;
+    T _data;
+    alias isSome this;
+
+    @safe nothrow @nogc:
+
+    /// Creates a value.
+    this(in const(T) data) {
+        opAssign(data);
+    }
+
+    /// Creates a fault.
+    this(Fault fault) {
+        opAssign(fault);
+    }
+
+    /// Creates a value if fault is none.
+    this(in const(T) data, Fault fault) {
+        if (fault) {
+            this(fault);
+        } else {
+            this(data);
+        }
+    }
+
+    /// Creates a value.
+    @trusted
+    void opAssign(in const(T) rhs) {
+        _fault = Fault.none;
+        _data = cast(T) rhs;
+    }
+
+    /// Creates a fault.
+    void opAssign(Fault rhs) {
+        _fault = rhs;
+    }
+
+    /// Copies the state of another optional value.
+    @trusted
+    void opAssign(in Maybe!T rhs) {
+        _fault = rhs._fault;
+        _data = cast(T) rhs._data;
+    }
+
+    /// Returns the fault.
+    pragma(inline, true)
+    Fault fault() {
+        return _fault;
+    }
+
+    /// Returns the value without checking if it exists.
+    pragma(inline, true)
+    T xx() {
+        return _data;
+    }
+
+    /// Returns the value and traps the fault check to avoid an assert.
+    T get(ref Fault trap) {
+        trap = _fault;
+        return _data;
+    }
+
+    /// Returns the value. Returns a default value when there is a fault.
+    T getOr() {
+        return _fault ? T.init : _data;
+    }
+
+    /// Returns the value. Returns a default value when there is a fault.
+    T getOr(T other) {
+        return _fault ? other : _data;
+    }
+
+    /// Returns the value, or asserts if a fault exists.
+    T getOrAssert(IStr text = "Fault was detected.") {
+        if (_fault) assert(0, text);
+        return _data;
+    }
+
+    /// Returns true when there is a fault.
+    pragma(inline, true)
+    bool isNone() const {
+        return _fault != Fault.none;
+    }
+
+    /// Returns true when there is a value.
+    pragma(inline, true)
+    bool isSome() const {
+        return _fault == Fault.none;
+    }
+
+    /// Clears the value, making it none.
+    void clear() {
+        _fault = Fault.some;
+    }
+}
+
+alias MaybeNot = Maybe; /// Maybe not.
+alias NotSure = Maybe;  /// Not sure.
+
+/// Represents an optional value. Prefer using `Maybe` in most cases.
+/// Note: the `isSome` member depends on `T`.
+/// If `T` is a value, then `isSome` is a field.
+/// If `T` is a pointer, then `isSome` is a property.
+/// The default value is an empty value.
+struct Option(T) {
+    enum isPtr = is(T : const(void)*); /// True if `T` is a pointer.
+
+    static if (!isPtr) bool _isSome;
+    T _data;
+    alias isSome this;
+
+    @trusted nothrow @nogc:
+
+    /// Creates a value.
+    this(in const(T) data) {
+        opAssign(data);
+    }
+
+    /// Creates a value.
+    void opAssign(in const(T) rhs) {
+        static if (!isPtr) {
+            _isSome = true;
+        }
+        _data = cast(T) rhs;
+    }
+
+    /// Copies the state of another optional value.
+    void opAssign(in Option!T rhs) {
+        static if (!isPtr) {
+            _isSome = rhs.isSome;
+        }
+        _data = cast(T) rhs._data;
+    }
+
+    /// Returns the value without checking if it exists.
+    pragma(inline, true)
+    T xx() {
+        return _data;
+    }
+
+    /// Returns the value and traps the `isSome` check to avoid an assert.
+    T get(ref bool trap) {
+        trap = isSome;
+        return _data;
+    }
+
+    /// Returns the value. Returns a default value when there is none.
+    T getOr() {
+        return !isSome ? T.init : _data;
+    }
+
+    /// Returns the value. Returns a default value when there is none.
+    T getOr(T other) {
+        return !isSome ? other : _data;
+    }
+
+    /// Returns the value, or asserts if it does not exists.
+    T getOrAssert(IStr text = "Fault was detected.") {
+        if (!isSome) assert(0, text);
+        return _data;
+    }
+
+    /// Returns true when there is no value.
+    pragma(inline, true)
+    bool isNone() const {
+        return !isSome;
+    }
+
+    /// Returns true when there is a value.
+    pragma(inline, true)
+    bool isSome() const {
+        static if (isPtr) {
+            return _data != null;
+        } else {
+            return _isSome;
+        }
+    }
+
+    /// Clears the value, making it none.
+    void clear() {
+        static if (isPtr) {
+            _data = null;
+        } else {
+            _isSome = false;
+        }
+    }
+}
+
+/// Represents a success or error value. Prefer using `Maybe` in most cases.
+struct Result(T, E, Sz tagSize = 0) {
+    union ResultUnion {
+        T value;
+        E error;
+    }
+
+    static if (tagSize == 2) {
+        alias Tag = ushort;
+    } else static if (tagSize == 4) {
+        alias Tag = uint;
+    } else static if (tagSize == 8) {
+        alias Tag = ulong;
+    } else {
+        alias Tag = bool;
+    }
+
+    Tag _isSome;
+    ResultUnion _data;
+    alias isSome this;
+
+    @trusted nothrow @nogc:
+
+    /// Creates a value.
+    this(in const(T) value) {
+        opAssign(value);
+    }
+
+    /// Creates an error.
+    this(in const(E) value) {
+        opAssign(value);
+    }
+
+    /// Creates a value.
+    void opAssign(in const(T) rhs) {
+        _isSome = true;
+        _data.value = cast(T) rhs;
+    }
+
+    /// Creates an error.
+    void opAssign(in const(E) rhs) {
+        _isSome = false;
+        _data.error = cast(E) rhs;
+    }
+
+    /// Copies the state of another result value.
+    void opAssign(in Result!(T, E) rhs) {
+        _isSome = rhs._isSome;
+        _data = cast(ResultUnion) rhs._data;
+    }
+
+    /// Returns true if it is some value.
+    pragma(inline, true)
+    bool isSome() {
+        return _isSome;
+    }
+
+    /// Returns the value without checking if it exists.
+    pragma(inline, true)
+    T xx() {
+        return _data.value;
+    }
+
+    /// Returns the value and traps the `isSome` check to avoid an assert.
+    T get(ref E trap) {
+        if (!_isSome) trap = _data.error;
+        return _data.value;
+    }
+
+    /// Returns the value. Returns a default value when there is none.
+    T getOr() {
+        return !_isSome ? T.init : _data.value;
+    }
+
+    /// Returns the value. Returns a default value when there is none.
+    T getOr(T other) {
+        return !_isSome ? other : _data.value;
+    }
+
+    /// Returns the value, or asserts if it does not exists.
+    T getOrAssert(IStr text = "Fault was detected.") {
+        if (!_isSome) assert(0, text);
+        return _data.value;
+    }
+
+    /// Returns true when there is an error.
+    pragma(inline, true)
+    bool isNone() const {
+        return !_isSome;
+    }
+
+    /// Clears the value, making it none.
+    void clear() {
+        _isSome = false;
+    }
+}
+
+/// A tagged union.
+struct Union(A...) if (A.length != 0) {
+    alias Types = A;
+    alias Base  = A[0];
+
+    union UnionData {
+        static foreach (i, T; A) {
+            mixin("T _m", i, ";");
+        }
+    }
+
+    static if (A.length <= ubyte.max) {
+        alias UnionType = ubyte;
+    } else static if (A.length <= ushort.max) {
+        alias UnionType = ushort;
+    } else {
+        alias UnionType = ulong;
+    }
+
+    UnionType _type;
+    UnionData _data;
+
+    /// Calls the given method for the currently active type.
+    /// All types must implement this method.
+    @trusted
+    auto call(IStr func, AA...)(AA args) {
+        switch (_type) {
+            static foreach (i, T; A) {
+                mixin("case i: return _data.tupleof[i].", func, "(args);");
+            }
+            default: assert(0, "Type not in union.");
+        }
+    }
+
+    @trusted nothrow @nogc:
+
+    static foreach (i, T; A) {
+        this(in const(T) value) {
+            opAssign(value);
+        }
+
+        void opAssign(in const(T) rhs) {
+            *(cast(T*) &_data) = cast(T) rhs;
+            _type = cast(UnionType) i;
+        }
+    }
+
+    pragma(inline, true) {
+        /// The currently active type.
+        UnionType type() {
+            return _type;
+        }
+
+        /// Returns true if the given type is the same as the currently active type.
+        bool isType(T)() {
+            return _type == typeOf!T;
+        }
+
+        /// Returns the data of the first union member. Only safe to use if all union members share a common first field.
+        ref Base base() {
+            return _data.tupleof[0];
+        }
+
+        /// Returns the data of the given type. Will assert if the type is not the same as the currently active type.
+        ref T as(T)() {
+            assert(_type == typeOf!T, "Type not active.");
+            return _data.tupleof[typeOf!T];
+        }
+    }
+
+    /// Returns true if all union members share a common first field.
+    enum isBaseAliasingSafe = () {
+        bool result = true;
+        foreach (T; A[1 .. $]) {
+            static if (is(T == struct)) {
+                static if (is(typeof(T.tupleof[0]) == struct)) {
+                    if (!is(typeof(T.tupleof[0]) == Base) && !is(typeof(T.tupleof[0].tupleof[0]) == Base)) result = false;
+                } else {
+                    if (!is(typeof(T.tupleof[0]) == Base)) result = false;
+                }
+            } else {
+                if (!is(T == Base)) result = false;
+            }
+        }
+        return result;
+    }();
+
+    /// Returns the type of the given type.
+    template typeOf(T) {
+        enum typeOf = () {
+            int result = -1;
+            static foreach (i, TT; A) {
+                static if (is(T == TT)) {
+                    result = i;
+                }
+            }
+            return result;
+        }();
+
+        static assert(typeOf != -1, "Type not in union.");
+    }
+}
+
+// NOTE: The name of the function is generic because it used to be a method of `Union`.
+//   If it's a problem, we could create an alias or even rename it.
+//   The reason it's not a method now is to avoid compile-time work.
+//   This is also one of the few functions that uses `in` LOL.
+/// Returns the current type name of the union.
+IStr typeName(U)(in const(U) unionValue) if (is(U : Union!A, A...)) {
+    switch (unionValue._type) {
+        static foreach (i, T; U.Types) {
+            case i: return T.stringof;
+        }
+        default: assert(0, "Type not in union.");
+    }
+}
+
+/// Returns a union from a union type.
+T toUnion(T)(UnionType type) if (is(T : Union!A, A...)) {
+    T result;
+    static foreach (i, Type; T.Types) {
+        if (i == type) {
+            result = Type.init;
+            goto loopExit;
+        }
+    }
+    loopExit:
+    return result;
+}
+
+/// Returns a union from a union type name.
+T toUnion(T)(IStr typeName) if (is(T : Union!A, A...)) {
+    T result;
+    static foreach (i, Type; T.Types) {
+        if (Type.stringof == typeName) {
+            result = Type.init;
+            goto loopExit;
+        }
+    }
+    loopExit:
+    return result;
+}
+
+/// Casts each element of a fixed-size array to a new element type.
+@trusted
+R[N] castToArray(R, T, Sz N)(ref T[N] from) {
+    R[N] result = void;
+    foreach (i, ref item; from) result[i] = cast(R) item;
+    return result;
+}
+
+/// Returns an error message that can be used for array-like objects.
+@trusted nothrow @nogc
+IStr indexErrorMessage(Sz i) {
+    IStr[1] fmtStrs = [
+        "Index {} does not exist.",
+    ];
+    return fmtSignedGroup(fmtStrs, i);
+}
+
+pragma(inline, true) @safe nothrow @nogc {
+    /// Returns an option from a maybe.
+    Option!T toForeignMaybe(T)(Maybe!T value) {
+        if (value.isSome) {
+            return Option!T(value.xx);
+        } else {
+            return Option!T();
+        }
+    }
+
+    /// Returns an foreign slice from a D slice.
+    ForeignSlice!T toForeignSlice(T)(T[] value) {
+        return ForeignSlice!T(value);
+    }
+
+    /// Returns an foreign slice from a D slice.
+    @trusted
+    ForeignSlice!(const(ubyte)) toForeignBytes(const(char)[] value) {
+        return ForeignSlice!(const(ubyte))(  cast(const(ubyte)[]) value  );
+    }
+
+    /// Returns an foreign slice from a D slice.
+    @trusted
+    ForeignSlice!(ubyte) toForeignBytesMut(char[] value) {
+        return ForeignSlice!(ubyte)(  cast(ubyte[]) value  );
+    }
+
+    // OMG IS THIS ODIN'S "explicit overloading" IN MY D CODE?
+    alias toForeign = toForeignMaybe;
+    alias toForeign = toForeignSlice;
+
+    /// Returns true is value is NaN.
+    bool isNan(float x) {
+        return !(x == x);
+    }
+
+    /// Returns true is value is NaN.
+    bool isNan(double x) {
+        return !(x == x);
+    }
+
+    /// Returns the absolute value of `x`.
+    T abs(T)(T x) {
+        return cast(T) (x < 0 ? -x : x);
+    }
+
+    /// Returns the smaller of `a` and `b`.
+    T min(T)(T a, T b) {
+        return a < b ? a : b;
+    }
+
+    /// Returns the smallest of `a`, `b`, and `c`.
+    T min3(T)(T a, T b, T c) {
+        return min(a, b).min(c);
+    }
+
+    /// Returns the smallest of `a`, `b`, `c`, and `d`.
+    T min4(T)(T a, T b, T c, T d) {
+        return min(a, b).min(c).min(d);
+    }
+
+    /// Returns the larger of `a` and `b`.
+    T max(T)(T a, T b) {
+        return a < b ? b : a;
+    }
+
+    /// Returns the largest of `a`, `b`, and `c`.
+    T max3(T)(T a, T b, T c) {
+        return max(a, b).max(c);
+    }
+
+    /// Returns the largest of `a`, `b`, `c`, and `d`.
+    T max4(T)(T a, T b, T c, T d) {
+        return max(a, b).max(c).max(d);
+    }
+
+    /// Returns -1 if `x` is negative, 1 if positive, or 0 if zero.
+    T sign(T)(T x) {
+        return x < 0 ? -1 : x > 0 ? 1 : 0;
+    }
+
+    /// Returns `x` clamped to the range [`a`, `b`].
+    T clamp(T)(T x, T a, T b) {
+        return max(x, a).min(b);
+    }
+
+    /// Returns the floor of `x` using a basic cast-based implementation.
+    float basicFloor(float x) {
+        return (x <= 0.0f && (cast(float) cast(int) x) != x)
+            ? (cast(float) cast(int) x) - 1.0f
+            : (cast(float) cast(int) x);
+    }
+
+    /// Returns the floor of `x` using a basic cast-based implementation.
+    double basicFloor64(double x) {
+        return (x <= 0.0 && (cast(double) cast(long) x) != x)
+            ? (cast(double) cast(long) x) - 1.0
+            : (cast(double) cast(long) x);
+    }
+
+    /// Returns the nearest integer to `x` using a basic cast-based implementation.
+    float basicRound(float x) {
+        return (x <= 0.0f)
+            ? cast(float) cast(int) (x - 0.5f)
+            : cast(float) cast(int) (x + 0.5f);
+    }
+
+    /// Returns the nearest integer to `x` using a basic cast-based implementation.
+    double basicRound64(double x) {
+        return (x <= 0.0)
+            ? cast(double) cast(long) (x - 0.5)
+            : cast(double) cast(long) (x + 0.5);
+    }
+
+    /// Returns the ceiling of `x` using a basic cast-based implementation.
+    float basicCeil(float x) {
+        return (x <= 0.0f || (cast(float) cast(int) x) == x)
+            ? (cast(float) cast(int) x)
+            : (cast(float) cast(int) x) + 1.0f;
+    }
+
+    /// Returns the ceiling of `x` using a basic cast-based implementation.
+    double basicCeil64(double x) {
+        return (x <= 0.0 || (cast(double) cast(long) x) == x)
+            ? (cast(double) cast(long) x)
+            : (cast(double) cast(long) x) + 1.0;
+    }
+}
+
+/// Can be used to make a distinct type. Useful for IDs.
+/// Usage: `struct Number { mixin typed!int; }`
+mixin template typed(T) {
+    alias Base = T;
+    T _data;
+    alias _data this;
+}
+
+/// Returns the index of an item inside the given alias arguments or -1 on error.
+@__ctfe
+int findInAliasArgs(T, A...)() {
+    auto result = -1;
+    static foreach (i, TT; A) {
+        static if (is(T == TT)) {
+            result = cast(int) i;
+        }
+    }
+    return result;
+}
+
+/// Returns true if an item is inside the given alias arguments.
+@__ctfe
+bool isInAliasArgs(T, A...)() {
+    return findInAliasArgs!(T, A) != -1;
+}
+
+/// Returns the index of an item inside the given UDA arguments or -1 on error.
+template findInUdaArgs(T, alias member) {
+    enum findInUdaArgs = () {
+        auto result = -1;
+        static foreach (i, attribute; __traits(getAttributes, member)) {
+            static if (is(typeof(attribute) == T) || is(attribute == T)) {
+                result = cast(int) i;
+            }
+        }
+        return result;
+    }();
+}
+
+/// Returns true if an item is inside the given UDA arguments.
+template isInUdaArgs(T, alias member) {
+    enum isInUdaArgs = findInUdaArgs!(T, member) != -1;
+}
+
+// NOTE: Some `JokaCustomMemory` functions are defined also in `memory.d`.
+version (JokaCustomMemory) {
+    extern(C) nothrow @nogc void* jokaMemset(void* ptr, int value, Sz size);
+    extern(C) nothrow @nogc void* jokaMemcpy(void* ptr, const(void)* source, Sz size);
+    extern(C) nothrow @nogc int   jokaMemcmp(const(void)* ptr1, const(void)* ptr2, Sz size);
+} else version (JokaGcMemory) {
+    private extern(C) pragma(mangle, "memset") @system nothrow @nogc void* stdc_memset(void* dest, int ch, size_t count);
+    private extern(C) pragma(mangle, "memcpy") @system nothrow @nogc void* stdc_memcpy(void* dest, const(void)* src, size_t count);
+    private extern(C) pragma(mangle, "memcmp") @system nothrow @nogc int   stdc_memcmp(const(void)* s1, const(void)* s2, size_t count);
+
+    @system nothrow @nogc
+    void* jokaMemset(void* ptr, int value, Sz size) {
+        return stdc_memset(ptr, value, size);
+    }
+
+    @system nothrow @nogc
+    void* jokaMemcpy(void* ptr, const(void)* source, Sz size) {
+        return stdc_memcpy(ptr, source, size);
+    }
+
+    @system nothrow @nogc
+    int jokaMemcmp(const(void)* ptr1, const(void)* ptr2, Sz size) {
+        return stdc_memcmp(ptr1, ptr2, size);
+    }
+} else {
+    private extern(C) pragma(mangle, "memset") @system nothrow @nogc void* stdc_memset(void* dest, int ch, size_t count);
+    private extern(C) pragma(mangle, "memcpy") @system nothrow @nogc void* stdc_memcpy(void* dest, const(void)* src, size_t count);
+    private extern(C) pragma(mangle, "memcmp") @system nothrow @nogc int   stdc_memcmp(const(void)* s1, const(void)* s2, size_t count);
+
+    version (JokaTypesStubs) {
+        private extern(C) pragma(mangle, "memset") @system nothrow @nogc void* stdc_memset(void* dest, int ch, size_t count) {
+            foreach (i; 0 .. count) (cast(ubyte*) dest)[i] = cast(ubyte) ch;
+            return dest;
+        }
+
+        private extern(C) pragma(mangle, "memcpy") @system nothrow @nogc void* stdc_memcpy(void* dest, const(void)* src, size_t count) {
+            foreach (i; 0 .. count) (cast(ubyte*) dest)[i] = (cast(ubyte*) src)[i];
+            return dest;
+        }
+
+        private extern(C) pragma(mangle, "memcmp") @system nothrow @nogc int stdc_memcmp(const(void)* s1, const(void)* s2, size_t count) {
+            auto p1 = cast(const(ubyte)*) s1;
+            auto p2 = cast(const(ubyte)*) s2;
+            foreach (i; 0 .. count) {
+                if (p1[i] != p2[i]) return p1[i] - p2[i];
+            }
+            return 0;
+        }
+    }
+
+    /// Sets the first `size` bytes of `ptr` to `value`.
+    @system nothrow @nogc
+    void* jokaMemset(void* ptr, int value, Sz size) {
+        return stdc_memset(ptr, value, size);
+    }
+
+    /// Copies `size` bytes from `source` to `ptr`.
+    @system nothrow @nogc
+    void* jokaMemcpy(void* ptr, const(void)* source, Sz size) {
+        return stdc_memcpy(ptr, source, size);
+    }
+
+    /// Compares the first `size` bytes of `ptr1` and `ptr2`, returning 0 if equal.
+    @system nothrow @nogc
+    int jokaMemcmp(const(void)* ptr1, const(void)* ptr2, Sz size) {
+        return stdc_memcmp(ptr1, ptr2, size);
+    }
+}
+
+// Function test.
+unittest {
+    alias Number = Union!(float, double);
+
+    assert(toUnion!Number(Number.typeOf!float).as!float.isNan == true);
+    assert(toUnion!Number(Number.typeOf!double).as!double.isNan == true);
+    assert(toUnion!Number("float").as!float.isNan == true);
+    assert(toUnion!Number("double").as!double.isNan == true);
+
+    assert(isInAliasArgs!(int, AliasArgs!(float)) == false);
+    assert(isInAliasArgs!(int, AliasArgs!(float, int)) == true);
+
+    int[3] a = [2, 4, 6];
+    auto b = castToArray!long(a);
+    assert(b[0] == 2 && b[1] == 4 && b[2] == 6);
+}
+
+// BitSet test.
+unittest {
+    auto bs = BitSet();
+    assert(bs.none == true);
+    assert(bs.any == false);
+    assert(bs.all == false);
+    assert(bs.length == 0);
+
+    bs.fill();
+    assert(bs.none == false);
+    assert(bs.any == true);
+    assert(bs.all == true);
+    assert(bs.length == 64);
+
+    bs.clear();
+    assert(bs.none == true);
+    assert(bs.any == false);
+    assert(bs.all == false);
+    assert(bs.length == 0);
+
+    bs[0] = true;
+    assert(bs[0] == true);
+    assert(bs.length == 1);
+
+    bs[3] = true;
+    assert(bs[3] == true);
+    assert(bs.length == 2);
+
+    bs[0] = false;
+    assert(bs[0] == false);
+    assert(bs.length == 1);
+
+    bs.flip(3);
+    assert(bs[3] == false);
+    assert(bs.none == true);
+    bs.flip(7);
+    assert(bs[7] == true);
+    assert(bs.length == 1);
+
+    bs.clear();
+    bs[1] = true;
+    bs[5] = true;
+    bs[62] = true;
+    assert(bs.length == 3);
+
+    Sz[3] expected = [1, 5, 62];
+    Sz i = 0;
+    foreach (bit; bs.activeBits) {
+        assert(bit == expected[i]);
+        i += 1;
+    }
+    assert(i == 3);
+
+    bs.clear();
+    Sz testCount = 0;
+    foreach (bit; bs.activeBits) testCount += 1;
+    assert(testCount == 0);
+
+    GBitSet!ubyte small;
+    assert(small.capacity == 8);
+    small[7] = true;
+    assert(small[7] == true);
+    assert(small.length == 1);
+    small.flip(7);
+    assert(small.none == true);
+}
+
+// Maybe test.
+unittest {
+    assert(Maybe!int().fault == Fault.some);
+    assert(Maybe!int().getOr() == 0);
+    assert(Maybe!int(0).fault == Fault.none);
+    assert(Maybe!int(0).getOr() == 0);
+    assert(Maybe!int(69).fault == Fault.none);
+    assert(Maybe!int(69).getOr() == 69);
+    assert(Maybe!int(Fault.none).fault == Fault.none);
+    assert(Maybe!int(Fault.none).getOr() == 0);
+    assert(Maybe!int(Fault.some).fault == Fault.some);
+    assert(Maybe!int(Fault.some).getOr() == 0);
+    assert(Maybe!int(69, Fault.none).fault == Fault.none);
+    assert(Maybe!int(69, Fault.none).getOr() == 69);
+    assert(Maybe!int(69, Fault.some).fault == Fault.some);
+    assert(Maybe!int(69, Fault.some).getOr() == 0);
+}
+
+// Union test.
+unittest {
+    alias Number = Union!(float, double);
+
+    assert(Number().typeName == "float");
+    assert(Number().isType!float == true);
+    assert(Number().isType!double == false);
+    assert(Number().as!float.isNan);
+    assert(Number(0.0f).typeName == "float");
+    assert(Number(0.0f).isType!float == true);
+    assert(Number(0.0f).isType!double == false);
+    assert(Number(0.0f).as!float == 0);
+    assert(Number(0.0).isType!float == false);
+    assert(Number(0.0).isType!double == true);
+    assert(Number(0.0).typeName == "double");
+    assert(Number(0.0).as!double == 0);
+    assert(Number.typeOf!float == 0);
+    assert(Number.typeOf!double == 1);
+
+    auto number = Number();
+    number = 0.0;
+    assert(number.as!double == 0);
+    number = 0.0f;
+    assert(number.as!float == 0);
+    number.as!float += 69.0f;
+    assert(number.as!float == 69);
+
+    auto numberPtr = &number.as!float();
+    *numberPtr *= 10;
+    assert(number.as!float == 690);
+
+    assert(Number.isBaseAliasingSafe == false);
+    struct Foo1 { float a; }
+    struct Foo2 { alias x = int; float b; }
+    struct Foo3 { Foo1 c; }
+    assert(Union!(float, Foo1).isBaseAliasingSafe == true);
+    assert(Union!(float, Foo2).isBaseAliasingSafe == true);
+    assert(Union!(float, Foo3).isBaseAliasingSafe == true);
+    assert(Union!(float, Foo1, Foo2, Foo3).isBaseAliasingSafe == true);
+}
+
+// Distinct test.
+unittest {
+    struct Foo { mixin typed!int; }
+
+    assert(is(Foo == int) == false);
+    assert(is(Foo : int) == true);
+    assert(is(int : Foo) == false);
+
+    auto a = Foo(0);
+    a = 1;
+    a += 2;
+    assert(a == 3);
+
+    auto b = a;
+    assert(b == a);
+}
+
+// --- ASCII
+
+@safe:
+
+version (JokaSmallFootprint) {
+    enum defaultAsciiBufferCount          = 4;   /// Generic string count.
+    enum defaultAsciiBufferSize           = 512; /// Generic string length.
+    enum defaultAsciiBufferCountForSlices = 16;  /// Generic slice count.
+
+    enum defaultAsciiFmtArgBufferCount = 16;  /// Format argument count.
+    enum defaultAsciiFmtArgBufferSize  = 256; /// Format argument length.
+    enum defaultAsciiFmtBufferCount    = 4;   /// Format string count.
+    enum defaultAsciiFmtBufferSize     = 512; /// Format string length.
+} else {
+    enum defaultAsciiBufferCount          = 8;    /// Generic string count.
+    enum defaultAsciiBufferSize           = 1024; /// Generic string length.
+    enum defaultAsciiBufferCountForSlices = 64;   /// Generic slice count.
+
+    enum defaultAsciiFmtArgBufferCount = 16;   /// Format argument count.
+    enum defaultAsciiFmtArgBufferSize  = 1024; /// Format argument length.
+    enum defaultAsciiFmtBufferCount    = 16;   /// Format string count.
+    enum defaultAsciiFmtBufferSize     = 2048; /// Format string length.
+}
+
+enum defaultAsciiFmtArgStr = "{}"; /// The format argument symbol.
+
+enum digitChars    = "0123456789";                         /// The set of decimal numeric characters.
+enum upperChars    = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";         /// The set of uppercase letters.
+enum lowerChars    = "abcdefghijklmnopqrstuvwxyz";         /// The set of lowercase letters.
+enum alphaChars    = upperChars ~ lowerChars;              /// The set of letters.
+enum spaceChars    = " \t\v\r\n\f";                        /// The set of whitespace characters.
+enum symbolChars   = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"; /// The set of symbol characters.
+enum hexDigitChars = "0123456789abcdefABCDEF";             /// The set of hexadecimal numeric characters.
+
+version (Windows) {
+    enum pathSep         = '\\'; /// The primary OS path separator as a character.
+    enum pathSepStr      = "\\"; /// The primary OS path separator as a string.
+    enum pathSepOther    = '/';  /// The complementary OS path separator as a character.
+    enum pathSepOtherStr = "/";  /// The complementary OS path separator as a string.
+} else {
+    enum pathSep         = '/';  /// The primary OS path separator as a character.
+    enum pathSepStr      = "/";  /// The primary OS path separator as a string.
+    enum pathSepOther    = '\\'; /// The complementary OS path separator as a character.
+    enum pathSepOtherStr = "\\"; /// The complementary OS path separator as a string.
+}
+
+enum sp = Sep(" ");  /// Space separator.
+enum cm = Sep(", "); /// Comma + space separator.
+
+/// Path separator style.
+enum PathSepStyle {
+    native,  /// The platform's default separator.
+    posix,   /// The `/` separator.
+    windows, /// The `\` separator.
+}
+
+/// A separator marker for printing.
+struct Sep {
+    IStr value; /// The value.
+    alias value this;
+}
+/// A string pair.
+struct StrPair {
+    IStr a; /// The first string.
+    IStr b; /// The second string.
+}
+
+/// A wrapper type for priting floats and doubles.
+struct Floating {
+    double value = 0.0; /// The value.
+    uint precision;     /// The number of digits after the dot.
+
+    @safe nothrow @nogc:
+
+    /// Returns a temporary string representation.
+    IStr toStr() {
+        return floatingToStr(value, precision);
+    }
+
+    alias toString = toStr;
+}
+
+// === BEGIN IES Support
+static if (__traits(compiles, { import core.interpolation; })) {
+    public import core.interpolation;
+} else {
+    // Functions below are copy-pasted from core.interpolation.
+
+    public IStr __getEmptyString() @nogc nothrow @safe {
+        return "";
+    }
+
+    struct InterpolationHeader {
+        alias toString = __getEmptyString;
+    }
+
+    struct InterpolationFooter {
+        alias toString = __getEmptyString;
+    }
+
+    struct InterpolatedLiteral(IStr text) {
+        static IStr toString() @nogc nothrow @safe {
+            return text;
+        }
+    }
+
+    struct InterpolatedExpression(IStr text) {
+        enum expression = text;
+        alias toString = __getEmptyString;
+    }
+}
+
+// NOTE: A BetterC fix. It's only needed when using IES.
+version (D_BetterC) {
+    extern(C) @nogc nothrow @safe /* IES */
+    IStr _D4core13interpolation16__getEmptyStringFNaNbNiNfZAya() { return ""; }
+}
+
+// NOTE: Helper functions.
+template isInterLitType(TT) { enum isInterLitType = is(TT == InterpolatedLiteral!_, alias _); }
+template isInterExpType(TT) { enum isInterExpType = is(TT == InterpolatedExpression!_, alias _); }
+// === END IES Support
+
+/// Converts the value to its string representation.
+@trusted
+IStr toStr(T)(T value) {
+    static assert(
+        !(is(T : const(A)[N], A, Sz N)), // !isArrayType
+        "Static arrays can't be passed to `toStr`. This may also happen indirectly when using printing functions. Convert to a slice first."
+    );
+    static if (is(T == enum)) { // isEnumType
+        return enumToStr(value);
+    } else static if (is(immutable(T) == immutable(char))) { // isCharType
+        return charToStr(value);
+    } else static if (is(immutable(T) == immutable(bool))) { // isBoolType
+        return boolToStr(value);
+    } else static if (__traits(isUnsigned, T)) { // isUnsignedType
+        return unsignedToStr(value);
+    } else static if (__traits(isIntegral, T)) { // isSignedType
+        return signedToStr(value);
+    } else static if (__traits(isFloating, T)) { // isFloating
+        return floatingToStr(value, 2);
+    } else static if (__traits(hasMember, T, "toStr")) {
+        return value.toStr();
+    } else static if (__traits(hasMember, T, "toString")) {
+        return value.toString();
+    } else static if (is(T : IStr)) { // isStrType
+        return value;
+    } else static if (is(T : IStrz)) { // isStrzType
+        return strzToStr(value);
+    } else {
+        static assert(0, "Type doesn't implement the `toStr` function.");
+    }
+}
+
+/// Formats the given string by replacing `{}` placeholders with argument values in order.
+/// Options within placeholders are not supported.
+/// For custom formatting use a wrapper type with a `toStr` method.
+/// Writes into the buffer and returns the formatted string.
+@trusted nothrow @nogc
+IStr fmtIntoBufferWithStrs(Str buffer, IStr fmtStr, IStr[] args...) {
+    auto result = buffer;
+    auto resultLength = 0;
+    auto fmtStrIndex = 0;
+    auto argIndex = 0;
+    while (fmtStrIndex < fmtStr.length) {
+        auto c1 = fmtStr[fmtStrIndex];
+        auto c2 = fmtStrIndex + 1 >= fmtStr.length ? '+' : fmtStr[fmtStrIndex + 1];
+        if (c1 == defaultAsciiFmtArgStr[0] && c2 == defaultAsciiFmtArgStr[1]) {
+            if (argIndex == args.length) assert(0, "A placeholder doesn't have an argument.");
+            if (copyChars(result, args[argIndex], resultLength)) return buffer[0 .. 0]; // NOTE: This makes sure we get the same pointer as the buffer.
+            resultLength += args[argIndex].length;
+            fmtStrIndex += 2;
+            argIndex += 1;
+        } else {
+            result[resultLength] = c1;
+            resultLength += 1;
+            fmtStrIndex += 1;
+        }
+    }
+    if (argIndex != args.length) assert(0, "An argument doesn't have a placeholder.");
+    result = result[0 .. resultLength];
+    return result;
+}
+
+// Fmt arguments.
+char[defaultAsciiFmtArgBufferSize][defaultAsciiFmtArgBufferCount] _fmtIntoBufferDataBuffer = void;
+IStr[defaultAsciiFmtArgBufferCount] _fmtIntoBufferSliceBuffer = void;
+// Fmt temporary strings.
+char[defaultAsciiFmtBufferSize][defaultAsciiFmtBufferCount] _fmtBuffer = void;
+byte _fmtBufferIndex = 0;
+
+/// Formats the given string by replacing `{}` placeholders with argument values in order.
+/// Options within placeholders are not supported.
+/// For custom formatting use a wrapper type with a `toStr` method.
+/// Writes into the buffer and returns the formatted string.
+@trusted
+IStr fmtIntoBuffer(A...)(Str buffer, IStr fmtStr, A args) {
+    /*
+    // The old loop that got replaced.
+    // It has 3 lines in the static foreach. The current one has only 1 line.
+    Str tempSlice;
+    foreach (i, arg; args) {
+        tempSlice = _fmtIntoBufferDataBuffer[i][];
+        if (tempSlice.copyStr(arg.toStr())) return buffer[0 .. 0]; // "An argument did not fit in the internal temporary buffer."
+        _fmtIntoBufferSliceBuffer[i] = tempSlice;
+    }
+    */
+
+    static assert(args.length <= defaultAsciiFmtArgBufferCount, "Too many format arguments.");
+    foreach (i, ref dataBuffer; _fmtIntoBufferDataBuffer) {
+        auto tempSlice = dataBuffer[];
+        static foreach (j, arg; args) {
+            if (i == j && tempSlice.copyStr(arg.toStr())) return buffer[0 .. 0];
+        }
+        _fmtIntoBufferSliceBuffer[i] = tempSlice;
+    }
+    return fmtIntoBufferWithStrs(buffer, fmtStr, _fmtIntoBufferSliceBuffer[0 .. args.length]);
+}
+
+IStr fmtIntoBuffer(A...)(Str buffer, InterpolationHeader header, A args, InterpolationFooter footer) {
+    // NOTE: Both `fmtStr` and `fmtArgs` can be copy-pasted when working with IES. Main copy is in the `fmt` function.
+    enum fmtStr = () {
+        Str result;
+        static foreach (i, T; A) {
+            static if (isInterLitType!T) { result ~= args[i].toString(); }
+            else static if (isInterExpType!T) { result ~= defaultAsciiFmtArgStr; }
+        }
+        return result;
+    }();
+    enum fmtArgs = () {
+        Str result;
+        static foreach (i, T; A) {
+            static if (isInterLitType!T || isInterExpType!T) {}
+            else { result ~= "args[" ~ i.stringof ~ "],"; }
+        }
+        return result;
+    }();
+    return mixin("fmtIntoBuffer(buffer, fmtStr,", fmtArgs, ")");
+}
+
+/// Formats into an internal static ring buffer and returns the slice.
+/// The slice is temporary and may be overwritten by later calls to `fmt`.
+/// For details on formatting, see the `fmtIntoBuffer` function.
+@trusted
+IStr fmt(A...)(IStr fmtStr, A args) {
+    _fmtBufferIndex = (_fmtBufferIndex + 1) % _fmtBuffer.length;
+    auto buffer = _fmtBuffer[_fmtBufferIndex][];
+
+    // `fmtIntoBuffer` body copy-pasted here to avoid one template.
+    static assert(args.length <= defaultAsciiFmtArgBufferCount, "Too many format arguments.");
+    foreach (i, ref dataBuffer; _fmtIntoBufferDataBuffer) {
+        auto tempSlice = dataBuffer[];
+        static foreach (j, arg; args) {
+            if (i == j && tempSlice.copyStr(arg.toStr())) return buffer[0 .. 0];
+        }
+        _fmtIntoBufferSliceBuffer[i] = tempSlice;
+    }
+    return fmtIntoBufferWithStrs(buffer, fmtStr, _fmtIntoBufferSliceBuffer[0 .. args.length]);
+}
+
+IStr fmt(A...)(InterpolationHeader header, A args, InterpolationFooter footer) {
+    // NOTE: Both `fmtStr` and `fmtArgs` can be copy-pasted when working with IES. Main copy is in the `fmt` function.
+    enum fmtStr = () {
+        Str result;
+        static foreach (i, T; A) {
+            static if (isInterLitType!T) { result ~= args[i].toString(); }
+            else static if (isInterExpType!T) { result ~= defaultAsciiFmtArgStr; }
+        }
+        return result;
+    }();
+    enum fmtArgs = () {
+        Str result;
+        static foreach (i, T; A) {
+            static if (isInterLitType!T || isInterExpType!T) {}
+            else { result ~= "args[" ~ i.stringof ~ "],"; }
+        }
+        return result;
+    }();
+    return mixin("fmt(fmtStr,", fmtArgs, ")");
+}
+
+@safe nothrow @nogc:
+
+/// Formats into an internal static ring buffer and returns the slice.
+/// This function can be used for types that create a lot of template bloat.
+/// Example: GVec2, GVec3, GVec4, GRect, ...
+IStr fmtSignedGroup(IStr[] fmtStrs, long[] args...) {
+    if (fmtStrs.length != args.length) assert(0, "Argument count and format count should be the same.");
+    switch (fmtStrs.length) {
+        case 1:
+            return concat(
+                fmtStrs[0].fmt(args[0]),
+            );
+        case 2:
+            return concat(
+                fmtStrs[0].fmt(args[0]),
+                fmtStrs[1].fmt(args[1]),
+            );
+        case 3:
+            return concat(
+                fmtStrs[0].fmt(args[0]),
+                fmtStrs[1].fmt(args[1]),
+                fmtStrs[2].fmt(args[2]),
+            );
+        case 4:
+            return concat(
+                fmtStrs[0].fmt(args[0]),
+                fmtStrs[1].fmt(args[1]),
+                fmtStrs[2].fmt(args[2]),
+                fmtStrs[3].fmt(args[3]),
+            );
+        default:
+            assert(0, "Argument count should be between 1 and 4.");
+    }
+}
+
+/// Formats into an internal static ring buffer and returns the slice.
+/// This function can be used for types that create a lot of template bloat.
+/// Example: GVec2, GVec3, GVec4, GRect, ...
+IStr fmtFloatingGroup(IStr[] fmtStrs, double[] args...) {
+    if (fmtStrs.length != args.length) assert(0, "Argument count and format count should be the same.");
+    switch (fmtStrs.length) {
+        case 1:
+            return concat(
+                fmtStrs[0].fmt(args[0]),
+            );
+        case 2:
+            return concat(
+                fmtStrs[0].fmt(args[0]),
+                fmtStrs[1].fmt(args[1]),
+            );
+        case 3:
+            return concat(
+                fmtStrs[0].fmt(args[0]),
+                fmtStrs[1].fmt(args[1]),
+                fmtStrs[2].fmt(args[2]),
+            );
+        case 4:
+            return concat(
+                fmtStrs[0].fmt(args[0]),
+                fmtStrs[1].fmt(args[1]),
+                fmtStrs[2].fmt(args[2]),
+                fmtStrs[3].fmt(args[3]),
+            );
+        default:
+            assert(0, "Argument count should be between 1 and 4.");
+    }
+}
+
+/// Halts the program with a TODO message indicating unimplemented code.
+/// Debug builds: runtime assert. Release builds: runtime assert or compile-time error.
+noreturn debugTodo(bool errorInRelease = false)(IStr text, IStr file = __FILE__, Sz line = __LINE__) {
+    debug {
+        assert(0, "TODO({}:{}): {}".fmt(file, line, text));
+    } else {
+        static if (errorInRelease) {
+            static assert(0, "Can't have TODOs in release builds.");
+        } else {
+            assert(0, "TODO({}:{}): {}".fmt(file, line, text));
+        }
+    }
+}
+
+deprecated("Use `debugTodo`. The old name was too generic.")
+alias todo = debugTodo;
+
+pragma(inline, true) {
+    /// Hashes a string using the FNV-1a algorithm with a 32-bit output.
+    uint hashFnv32a(IStr text) {
+        uint h = 2166136261U;
+        foreach (c; text) {
+            h ^= c;
+            h *= 16777619U;
+        }
+        return h;
+    }
+
+    /// Hashes a string using the FNV-1a algorithm with a 64-bit output.
+    ulong hashFnv64a(IStr text) {
+        ulong h = 14695981039346656037UL;
+        foreach (c; text) {
+            h ^= c;
+            h *= 1099511628211UL;
+        }
+        return h;
+    }
+
+    /// Wraps a floating value with formatting options.
+    Floating flo(double value, uint precision) {
+        return Floating(value, precision);
+    }
+
+    /// Returns true if the character is a digit (0-9).
+    bool isDigit(char c) {
+        return c >= '0' && c <= '9';
+    }
+
+    /// Returns true if the character is an uppercase letter (A-Z).
+    bool isUpper(char c) {
+        return c >= 'A' && c <= 'Z';
+    }
+
+    /// Returns true the character is a lowercase letter (a-z).
+    bool isLower(char c) {
+        return c >= 'a' && c <= 'z';
+    }
+
+    /// Returns true if the character is an alphabetic letter (A-Z, a-z).
+    bool isAlpha(char c) {
+        return isLower(c) || isUpper(c);
+    }
+
+    /// Returns true if the character is an alphabetic letter (A-Z, a-z) or a digit (0-9).
+    bool isAlphaOrDigit(char c) {
+        return isAlpha(c) || isDigit(c);
+    }
+
+    /// Returns true if the character is a whitespace character (space, tab, ...).
+    bool isSpace(char c) {
+        return (c >= '\t' && c <= '\r') || (c == ' ');
+    }
+
+    /// Returns true if the character is a symbol (!, ", ...).
+    bool isSymbol(char c) {
+        return (c >= '!' && c <= '/') || (c >= ':' && c <= '@') || (c >= '[' && c <= '`') || (c >= '{' && c <= '~');
+    }
+
+    /// Returns true if the character is a hexadecimal digit (0-9, A-F, a-f).
+    bool isHexDigit(char c) {
+        return isDigit(c) || (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f');
+    }
+
+    /// Returns true if the character is a autocomplete separator.
+    bool isAutocompleteSep(char c) {
+        return isSpace(c) || isSymbol(c);
+    }
+
+    /// Returns true if the character can start a variable name (letter or underscore).
+    bool isVariableNameStart(char c) {
+        return isAlpha(c) || c == '_';
+    }
+
+    /// Returns true if the character can appear in a variable name (letter, digit, or underscore).
+    bool isVariableNamePart(char c) {
+        return isAlphaOrDigit(c) || c == '_';
+    }
+
+    /// Returns true if the string is a valid variable name (starts with a letter or underscore, followed by letters, digits, or underscores).
+    bool isVariableName(IStr str) {
+        if (str.length == 0 || !str[0].isVariableNameStart) return false;
+        foreach (c; str[1 .. $]) if (!c.isVariableNamePart) return false;
+        return true;
+    }
+
+    /// Returns true if the string represents a C string.
+    bool isStrz(IStr str) {
+        return str.length != 0 && str[$ - 1] == '\0';
+    }
+
+    /// Converts the character to uppercase if it is a lowercase letter.
+    char toUpper(char c) {
+        return isLower(c) ? cast(char) (c - 32) : c;
+    }
+
+    /// Converts the character to lowercase if it is an uppercase letter.
+    char toLower(char c) {
+        return isUpper(c) ? cast(char) (c + 32) : c;
+    }
+
+    /// Converts all lowercase letters in the string to uppercase.
+    Str toUpper(Str str) {
+        foreach (ref c; str) c = toUpper(c);
+        return str;
+    }
+
+    /// Converts all uppercase letters in the string to lowercase.
+    Str toLower(Str str) {
+        foreach (ref c; str) c = toLower(c);
+        return str;
+    }
+
+    /// Returns the length of the C string.
+    @trusted
+    Sz strzLength(IStrz str) {
+        Sz result = 0;
+        while (str[result]) result += 1;
+        return result;
+    }
+}
+
+/// Returns true if the two strings are equal, ignoring case.
+bool equalsNoCase(IStr str, IStr other) {
+    if (str.length != other.length) return false;
+    foreach (i; 0 .. str.length) if (toUpper(str[i]) != toUpper(other[i])) return false;
+    return true;
+}
+
+/// Returns true if the string starts with the specified substring.
+bool startsWith(IStr str, IStr start) {
+    if (str.length < start.length) return false;
+    return str[0 .. start.length] == start;
+}
+
+/// Returns true if the string starts with the specified character.
+bool startsWith(IStr str, char start) {
+    return startsWith(str, charToStr(start));
+}
+
+/// Returns true if the string ends with the specified substring.
+bool endsWith(IStr str, IStr end) {
+    if (str.length < end.length) return false;
+    return str[$ - end.length .. $] == end;
+}
+
+/// Returns true if the string ends with the specified character.
+bool endsWith(IStr str, char end) {
+    return endsWith(str, charToStr(end));
+}
+
+/// Counts the number of occurrences of the specified substring in the string.
+int countItem(IStr str, IStr item) {
+    int result = 0;
+    if (str.length < item.length || item.length == 0) return result;
+    foreach (i; 0 .. str.length - item.length) {
+        if (str[i .. i + item.length] == item) {
+            result += 1;
+            i += item.length - 1;
+        }
+    }
+    return result;
+}
+
+/// Counts the number of occurrences of the specified character in the string.
+int countItem(IStr str, char item) {
+    return countItem(str, charToStr(item));
+}
+
+/// Finds the starting index of the first occurrence of the specified substring in the string, or returns -1 if not found.
+int findStart(IStr str, IStr item) {
+    if (str.length < item.length || item.length == 0) return -1;
+    foreach (i; 0 .. str.length - item.length + 1) {
+        if (str[i .. i + item.length] == item) return cast(int) i;
+    }
+    return -1;
+}
+
+/// Finds the starting index of the first occurrence of the specified character in the string, or returns -1 if not found.
+int findStart(IStr str, char item) {
+    return findStart(str, charToStr(item));
+}
+
+/// Finds the ending index of the first occurrence of the specified substring in the string, or returns -1 if not found.
+int findEnd(IStr str, IStr item) {
+    if (str.length < item.length || item.length == 0) return -1;
+    foreach_reverse (i; 0 .. str.length - item.length + 1) {
+        if (str[i .. i + item.length] == item) return cast(int) i;
+    }
+    return -1;
+}
+
+/// Finds the ending index of the first occurrence of the specified character in the string, or returns -1 if not found.
+int findEnd(IStr str, char item) {
+    return findEnd(str, charToStr(item));
+}
+
+/// Finds the first occurrence of the specified item in the slice, or returns -1 if not found.
+int findItem(IStr[] items, IStr item) {
+    foreach (i, it; items) if (it == item) return cast(int) i;
+    return -1;
+}
+
+/// Finds the first occurrence of the specified item in the slice, or returns -1 if not found.
+int findItem(IStr[] items, char item) {
+    return findItem(items, charToStr(item));
+}
+
+/// Finds the first occurrence of the specified start in the slice, or returns -1 if not found.
+int findItemThatStartsWith(IStr[] items, IStr start) {
+    foreach (i, it; items) if (it.startsWith(start)) return cast(int) i;
+    return -1;
+}
+
+/// Finds the first occurrence of the specified start in the slice, or returns -1 if not found.
+int findItemThatStartsWith(IStr[] items, char start) {
+    return findItemThatStartsWith(items, charToStr(start));
+}
+
+/// Finds the first occurrence of the specified end in the slice, or returns -1 if not found.
+int findItemThatEndsWith(IStr[] items, IStr end) {
+    foreach (i, it; items) if (it.endsWith(end)) return cast(int) i;
+    return -1;
+}
+
+/// Finds the first occurrence of the specified end in the slice, or returns -1 if not found.
+int findItemThatEndsWith(IStr[] items, char end) {
+    return findItemThatEndsWith(items, charToStr(end));
+}
+
+/// Removes whitespace characters from the beginning of the string.
+/// Value `pattern` can be used to trim a specific pattern from the start (e.g. "temp.") instead of whitespace.
+IStr trimStart(IStr str, IStr pattern = "") {
+    IStr result = str;
+    if (pattern.length) {
+        while (result.length > 0) {
+            if (!result.startsWith(pattern)) break;
+            result = result[pattern.length .. $];
+            break;
+        }
+    } else {
+        while (result.length > 0) {
+            if (!isSpace(result[0])) break;
+            result = result[1 .. $];
+        }
+    }
+    return result;
+}
+
+/// Removes whitespace characters from the beginning of the string.
+/// Value `pattern` can be used to trim a specific pattern from the start (e.g. "temp.") instead of whitespace.
+IStr trimStart(IStr str, char pattern) {
+    return trimStart(str, pattern == '\0' ? "" : charToStr(pattern));
+}
+
+/// Removes whitespace characters from the end of the string.
+/// Value `pattern` can be used to trim a specific pattern from the end (e.g. ".txt") instead of whitespace.
+IStr trimEnd(IStr str, IStr pattern = "") {
+    IStr result = str;
+    if (pattern.length) {
+        while (result.length > 0) {
+            if (!result.endsWith(pattern)) break;
+            result = result[0 .. $ - pattern.length];
+            break;
+        }
+    } else {
+        while (result.length > 0) {
+            if (!isSpace(result[$ - 1])) break;
+            result = result[0 .. $ - 1];
+        }
+    }
+    return result;
+}
+
+/// Removes whitespace characters from the end of the string.
+/// Value `pattern` can be used to trim a specific pattern from the end (e.g. ".txt") instead of whitespace.
+IStr trimEnd(IStr str, char pattern) {
+    return trimEnd(str, pattern == '\0' ? "" : charToStr(pattern));
+}
+
+/// Removes whitespace characters from both the beginning and end of the string.
+IStr trim(IStr str) {
+    return str.trimStart().trimEnd();
+}
+
+/// Removes the specified prefix from the beginning of the string if it exists.
+alias removePrefix = trimStart;
+
+/// Removes the specified suffix from the end of the string if it exists.
+alias removeSuffix = trimEnd;
+
+/// Advances the string by the specified number of characters.
+IStr advanceStr(IStr str, Sz amount) {
+    if (str.length < amount) {
+        return str[$ .. $];
+    } else {
+        return str[amount .. $];
+    }
+}
+
+/// Copies characters from the source string to the destination string starting at the specified index.
+@trusted
+Fault copyChars(Str str, IStr source, Sz startIndex = 0) {
+    if (str.length < source.length + startIndex) return Fault.overflow;
+    jokaMemcpy(str.ptr + startIndex, source.ptr, source.length);
+    return Fault.none;
+}
+
+/// Copies characters from the source string to the destination string starting at the specified index and adjusts the length of the destination string.
+Fault copyStr(ref Str str, IStr source, Sz startIndex = 0) {
+    auto fault = copyChars(str, source, startIndex);
+    if (fault) return fault;
+    str = str[0 .. startIndex + source.length];
+    return Fault.none;
+}
+
+/// Concatenates the strings.
+/// Writes into the buffer and returns the result.
+IStr concatIntoBuffer(Str buffer, IStr[] args...) {
+    if (args.length == 0) return ".";
+    auto result = buffer;
+    auto length = 0;
+    foreach (i, arg; args) {
+        result.copyChars(arg, length);
+        length += arg.length;
+    }
+    result = result[0 .. length];
+    return result;
+}
+
+/// Concatenates the strings using a static buffer and returns the result.
+IStr concat(IStr[] args...) {
+    static char[defaultAsciiBufferSize][defaultAsciiBufferCount] buffers = void;
+    static byte bufferIndex = 0;
+
+    if (args.length == 0) return ".";
+    bufferIndex = (bufferIndex + 1) % buffers.length;
+    return concatIntoBuffer(buffers[bufferIndex][], args);
+}
+
+/// Splits the string using a static buffer and returns the result.
+@trusted
+IStr[] split(IStr str, IStr sep) {
+    static IStr[defaultAsciiBufferSize][defaultAsciiBufferCountForSlices] buffers = void;
+    static byte bufferIndex = 0;
+
+    bufferIndex = (bufferIndex + 1) % buffers.length;
+    auto length = 0;
+    while (str.length != 0) {
+        buffers[bufferIndex][length] = str.skipValue(sep);
+        length += 1;
+    }
+    return buffers[bufferIndex][0 .. length];
+}
+
+/// Splits the string using a static buffer and returns the result.
+IStr[] split(IStr str, char sep) {
+    return split(str, charToStr(sep));
+}
+
+/// Returns true if the given path is absolute.
+bool isAbsolutePath(IStr path, PathSepStyle style = PathSepStyle.native) {
+    if (path.length == 0) return false;
+    auto isPosix = style == PathSepStyle.posix;
+    if (style == PathSepStyle.native) {
+        version (Windows) isPosix = false;
+        else isPosix = true;
+    }
+    if (isPosix) {
+        return path.startsWith("/");
+    } else {
+        if (path.startsWith("\\\\")) {
+            return true; // UNC.
+        } else if (path[0].isAlpha) {
+            return path[1 .. $].startsWith(":\\") || path[1 .. $].startsWith(":/"); // Drive.
+        } else if (path.startsWith("/") || path.startsWith("\\")) {
+            return true; // Rooted.
+        } else {
+            return false;
+        }
+    }
+}
+
+/// Returns the main and alternate separators for the given style.
+StrPair pathSepStrPair(PathSepStyle style) {
+    with (PathSepStyle) final switch (style) {
+        case native: return StrPair(pathSepStr, pathSepOtherStr);
+        case posix: return StrPair("/", "\\");
+        case windows: return StrPair("\\", "/");
+    }
+}
+
+/// Returns the directory of the path, or "." if there is no directory.
+IStr pathDirName(IStr path, PathSepStyle style = PathSepStyle.native) {
+    auto pair = pathSepStrPair(style);
+    auto end = findEnd(path, pair.a);
+    if (end == -1) return ".";
+    else return path[0 .. end];
+}
+
+/// Returns the extension of the path.
+IStr pathExtName(IStr path) {
+    auto end = findEnd(path, ".");
+    if (end == -1) return "";
+    else return path[end .. $];
+}
+
+/// Returns the base name of the path.
+IStr pathBaseName(IStr path, PathSepStyle style = PathSepStyle.native) {
+    auto pair = pathSepStrPair(style);
+    auto end = findEnd(path, pair.a);
+    if (end == -1) return path;
+    else return path[end + 1 .. $];
+}
+
+/// Returns the base name of the path without the extension.
+IStr pathBaseNameNoExt(IStr path) {
+    return path.pathBaseName[0 .. $ - path.pathExtName.length];
+}
+
+/// Removes path separators from the beginning of the path.
+IStr pathTrimStart(IStr path, PathSepStyle style = PathSepStyle.native) {
+    auto result = path;
+    auto pair = pathSepStrPair(style);
+    while (result.length > 0) {
+        if (result[0] == pair.a[0] || result[0] == pair.b[0]) result = result[1 .. $];
+        else break;
+    }
+    return result;
+
+}
+
+/// Removes path separators from the end of the path.
+IStr pathTrimEnd(IStr path, PathSepStyle style = PathSepStyle.native) {
+    auto result = path;
+    auto pair = pathSepStrPair(style);
+    while (result.length > 0) {
+        if (result[$ - 1] == pair.a[0] || result[$ - 1] == pair.b[0]) result = result[0 .. $ - 1];
+        else break;
+    }
+    return result;
+}
+
+/// Removes path separators from the beginning and end of the path.
+IStr pathTrim(IStr path) {
+    return path.pathTrimStart().pathTrimEnd();
+}
+
+/// Formats the path to a standard form, normalizing separators.
+IStr pathFmt(IStr path, PathSepStyle style = PathSepStyle.native) {
+    static char[defaultAsciiBufferSize][defaultAsciiBufferCount] buffers = void;
+    static byte bufferIndex = 0;
+
+    if (path.length == 0) return ".";
+    bufferIndex = (bufferIndex + 1) % buffers.length;
+    auto bufferSlice = buffers[bufferIndex][];
+    auto pair = pathSepStrPair(style);
+    foreach (i, c; path) bufferSlice[i] = c == pair.b[0] ? pair.a[0] : c;
+    return bufferSlice[0 .. path.length];
+}
+
+/// Concatenates the paths, ensuring proper path separators between them.
+IStr pathConcat(IStr[] args...) {
+    return pathConcat(PathSepStyle.native, args);
+}
+
+/// Concatenates the paths, ensuring proper path separators between them.
+IStr pathConcat(PathSepStyle style, IStr[] args...) {
+    static char[defaultAsciiBufferSize][defaultAsciiBufferCount] buffers = void;
+    static byte bufferIndex = 0;
+
+    if (args.length == 0) return ".";
+    bufferIndex = (bufferIndex + 1) % buffers.length;
+    auto bufferSlice = buffers[bufferIndex][];
+    auto pair = pathSepStrPair(style);
+    auto length = 0;
+    auto isFirst = true;
+    foreach (i, arg; args) {
+        if (arg.length == 0) continue;
+        auto cleanArg = arg;
+        if (cleanArg[0] == pair.a[0] || cleanArg[0] == pair.b[0]) {
+            cleanArg = cleanArg.pathTrimStart();
+            if (isFirst) {
+                bufferSlice[length] = pair.a[0];
+                length += 1;
+            }
+        }
+        cleanArg = cleanArg.pathTrimEnd();
+        bufferSlice.copyChars(cleanArg, length);
+        length += cleanArg.length;
+        if (i != args.length - 1) {
+            bufferSlice[length] = pair.a[0];
+            length += 1;
+        }
+        isFirst = false;
+    }
+    if (length == 0) return ".";
+    return bufferSlice[0 .. length];
+}
+
+/// Splits the path using a static buffer and returns the result.
+@trusted
+IStr[] pathSplit(IStr str, PathSepStyle style = PathSepStyle.native) {
+    static IStr[defaultAsciiBufferSize][defaultAsciiBufferCountForSlices] buffers = void;
+    static byte bufferIndex = 0;
+
+    bufferIndex = (bufferIndex + 1) % buffers.length;
+    auto pair = pathSepStrPair(style);
+    auto length = 0;
+    while (str.length != 0) {
+        buffers[bufferIndex][length] = str.skipValue(pair.a);
+        length += 1;
+    }
+    return buffers[bufferIndex][0 .. length];
+}
+
+/// Skips over the next occurrence of the specified separator in the string, returning the substring before the separator and updating the input string to start after the separator.
+IStr skipValue(ref inout(char)[] str, IStr sep, bool canSkipExtra = false) {
+    if (sep.length == 0 || str.length < sep.length) {
+        auto result = str;
+        str = str[$ .. $];
+        return result;
+    }
+
+    foreach (i; 0 .. str.length - sep.length) {
+        if (str[i .. i + sep.length] == sep) {
+            auto result = str[0 .. i];
+            str = str[i + sep.length .. $];
+            while (canSkipExtra && str.length >= sep.length && str[0 .. sep.length] == sep) {
+                str = str[sep.length .. $];
+            }
+            return result;
+        }
+    }
+
+    auto result = str;
+    if (str[$ - sep.length .. $] == sep) result = str[0 .. $ - 1];
+    str = str[$ .. $];
+    return result;
+}
+
+/// Skips over the next occurrence of the specified separator in the string, returning the substring before the separator and updating the input string to start after the separator.
+IStr skipValue(ref inout(char)[] str, char sep, bool canSkipExtra = false) {
+    return skipValue(str, charToStr(sep), canSkipExtra);
+}
+
+/// Skips over the next line in the string, returning the substring before the line break and updating the input string to start after the line break.
+IStr skipLine(ref inout(char)[] str) {
+    auto result = skipValue(str, "\n");
+    if (result.length != 0 && result[$ - 1] == '\r') result = result[0 .. $ - 1];
+    return result;
+}
+
+/// Skips over the next space in the string, returning the substring before the space and updating the input string to start after the space.
+IStr skipSpace(ref inout(char)[] str) {
+    return skipValue(str, " ", true);
+}
+
+/// Iterates over lines of text.
+ByLineRange byLine(IStr view, bool canTrim = false) {
+    return ByLineRange(view, canTrim);
+}
+
+/// Iteration object over lines of text.
+struct ByLineRange {
+    IStr view;
+    IStr slice;
+    bool canTrim;
+
+    @safe nothrow @nogc:
+
+    this(IStr view, bool canTrim = false) {
+        this.view = view;
+        this.canTrim = canTrim;
+        popFront();
+    }
+
+    bool empty() {
+        return view.length == 0 && slice.length == 0;
+    }
+
+    IStr front() {
+        return slice;
+    }
+
+    void popFront() {
+        slice = canTrim ? view.skipLine().trim() : view.skipLine();
+    }
+}
+
+/// Converts the boolean value to its string representation.
+IStr boolToStr(bool value, bool isShortName = false, bool isLower = false) {
+    return value ? (isShortName ? (isLower ? "t" : "T") : "true") : (isShortName ? (isLower ? "f" : "F") : "false");
+}
+
+/// Converts the character to its string representation.
+IStr charToStr(char value) {
+    static char[1] buffer = void;
+
+    auto result = buffer[];
+    result[0] = value;
+    result = result[0 .. 1];
+    return result;
+}
+
+/// Converts the unsigned long value to its string representation.
+IStr unsignedToStr(ulong value) {
+    static char[64] buffer = void;
+
+    auto result = buffer[];
+    if (value == 0) {
+        result[0] = '0';
+        result = result[0 .. 1];
+    } else {
+        auto digitCount = 0;
+        for (auto temp = value; temp != 0; temp /= 10) {
+            result[$ - 1 - digitCount] = (temp % 10) + '0';
+            digitCount += 1;
+        }
+        result = result[$ - digitCount .. $];
+    }
+    return result;
+}
+
+/// Converts the signed long value to its string representation.
+IStr signedToStr(long value) {
+    static char[64] buffer = void;
+
+    auto result = buffer[];
+    if (value < 0) {
+        auto temp = unsignedToStr(-value);
+        result[0] = '-';
+        result.copyStr(temp, 1);
+    } else {
+        auto temp = unsignedToStr(value);
+        result.copyStr(temp, 0);
+    }
+    return result;
+}
+
+/// Converts the double value to its string representation with the specified precision.
+IStr floatingToStr(double value, uint precision = 2) {
+    static char[64] buffer = void;
+
+    if (value.isNan) return "nan";
+    if (precision == 0) return signedToStr(cast(long) value);
+
+    auto result = buffer[];
+    auto cleanNumber = value;
+    auto rightDigitCount = 0;
+    while (cleanNumber != cast(double) (cast(long) cleanNumber)) {
+        rightDigitCount += 1;
+        cleanNumber *= 10;
+    }
+
+    // Add extra zeros at the end if needed.
+    // I do this because it makes it easier to remove the zeros later.
+    if (precision > rightDigitCount) {
+        foreach (j; 0 .. precision - rightDigitCount) {
+            rightDigitCount += 1;
+            cleanNumber *= 10;
+        }
+    }
+
+    // Digits go in the buffer from right to left.
+    auto cleanNumberStr = signedToStr(cast(long) cleanNumber);
+    auto i = result.length;
+    // Check two cases: 0.NN, N.NN
+    if (cast(long) value == 0) {
+        if (value < 0.0) {
+            cleanNumberStr = cleanNumberStr[1 .. $];
+        }
+        i -= cleanNumberStr.length;
+        result.copyChars(cleanNumberStr, i);
+        foreach (j; 0 .. rightDigitCount - cleanNumberStr.length) {
+            i -= 1;
+            result[i] = '0';
+        }
+        i -= 2;
+        result.copyChars("0.", i);
+        if (value < 0.0) {
+            i -= 1;
+            result[i] = '-';
+        }
+    } else {
+        i -= rightDigitCount;
+        result.copyChars(cleanNumberStr[$ - rightDigitCount .. $], i);
+        i -= 1;
+        result[i] = '.';
+        i -= cleanNumberStr.length - rightDigitCount;
+        result.copyChars(cleanNumberStr[0 .. $ - rightDigitCount], i);
+    }
+    // Remove extra zeros at the end if needed.
+    if (precision < rightDigitCount) {
+        result = result[0 .. cast(Sz) ($ - rightDigitCount + precision)];
+    }
+    return result[i .. $];
+}
+
+/// Converts the C string to a string.
+@trusted
+IStr strzToStr(IStrz value) {
+    return value[0 .. value.strzLength];
+}
+
+/// Converts the enum value to its string representation.
+IStr enumToStr(T)(T value) {
+    switch (value) {
+        static foreach (m; __traits(allMembers, T)) {
+            mixin("case T.", m, ": return m;");
+        }
+        default: return "?";
+    }
+}
+
+/// Converts the string to a bool.
+Maybe!bool toBool(IStr str, bool isFullNameOnly = false, bool isUpperOnly = false) {
+    if (str == "false" || (isFullNameOnly ? false : (isUpperOnly ? str == "F" : str == "F" || str == "f"))) {
+        return Maybe!bool(false);
+    } else if (str == "true" || (isFullNameOnly ? false : (isUpperOnly ? str == "T" : str == "T" || str == "t"))) {
+        return Maybe!bool(true);
+    } else {
+        return Maybe!bool(Fault.invalid);
+    }
+}
+
+/// Converts the string to a ulong.
+Maybe!ulong toUnsigned(IStr str) {
+    if (str.length == 0 || str.length >= 18) {
+        return Maybe!ulong(Fault.overflow);
+    } else {
+        if (str.length == 1 && str[0].isSymbol) {
+            return Maybe!ulong(Fault.invalid);
+        }
+        ulong value = 0;
+        ulong level = 1;
+        foreach_reverse (i, c; str[(str[0] == '+' ? 1 : 0) .. $]) {
+            if (c == '_') {
+            } else if (isDigit(c)) {
+                value += (c - '0') * level;
+                level *= 10;
+            } else {
+                return Maybe!ulong(Fault.invalid);
+            }
+        }
+        return Maybe!ulong(value);
+    }
+}
+
+/// Converts the character to a ulong.
+Maybe!ulong toUnsigned(char c) {
+    if (isDigit(c)) {
+        return Maybe!ulong(c - '0');
+    } else {
+        return Maybe!ulong(Fault.invalid);
+    }
+}
+
+/// Converts the string to a long.
+Maybe!long toSigned(IStr str) {
+    if (str.length == 0 || str.length >= 18) {
+        return Maybe!long(Fault.overflow);
+    } else {
+        auto temp = toUnsigned(str[(str[0] == '-' ? 1 : 0) .. $]);
+        return Maybe!long(str[0] == '-' ? -temp.xx : temp.xx, temp.fault);
+    }
+}
+
+/// Converts the character to a long.
+Maybe!long toSigned(char c) {
+    if (isDigit(c)) {
+        return Maybe!long(c - '0');
+    } else {
+        return Maybe!long(Fault.invalid);
+    }
+}
+
+/// Converts the string to a double.
+Maybe!double toFloating(IStr str) {
+    if (str == "nan" || str == "NaN" || str == "NAN") return Maybe!double(double.nan);
+    auto dotIndex = findStart(str, ".");
+    if (dotIndex == -1) {
+        auto temp = toSigned(str);
+        return Maybe!double(temp.xx, temp.fault);
+    } else {
+        auto left = toSigned(str[0 .. dotIndex]);
+        auto right = toSigned(str[dotIndex + 1 .. $]);
+        if (left.isNone || right.isNone) {
+            return Maybe!double(Fault.invalid);
+        } else if (str[dotIndex + 1] == '-' || str[dotIndex + 1] == '+') {
+            return Maybe!double(Fault.invalid);
+        } else {
+            auto sign = str[0] == '-' ? -1 : 1;
+            auto level = 10;
+            foreach (i; 1 .. str[dotIndex + 1 .. $].length) {
+                level *= 10;
+            }
+            return Maybe!double(left.xx + sign * (right.xx / (cast(double) level)));
+        }
+    }
+}
+
+/// Converts the character to a double.
+Maybe!double toFloating(char c) {
+    if (isDigit(c)) {
+        return Maybe!double(c - '0');
+    } else {
+        return Maybe!double(Fault.invalid);
+    }
+}
+
+/// Converts the string to an enum value.
+@trusted
+Maybe!T toEnum(T, bool noCase = false, bool canIgnoreSpaceAndSymbol = false)(IStr str) if (is(T == enum)) {
+    auto result = Maybe!T();
+    static if (noCase || canIgnoreSpaceAndSymbol) {
+        auto slice = str;
+        static if (canIgnoreSpaceAndSymbol) {
+            char[128] enumBuffer = void;
+            auto enumBufferSlice = enumBuffer[];
+            auto enumBufferSliceLength = 0;
+            foreach (i, c; str) {
+                if (c.isSpace || c.isSymbol) continue;
+                if (enumBufferSliceLength >= enumBuffer.length) {
+                    result = Fault.overflow;
+                    return result;
+                }
+                enumBufferSlice[enumBufferSliceLength] = c;
+                enumBufferSliceLength += 1;
+            }
+            enumBufferSlice = enumBufferSlice[0 .. enumBufferSliceLength];
+            slice = enumBufferSlice;
+        }
+        static foreach (m; __traits(allMembers, T)) {
+            if (noCase ? m.equalsNoCase(slice) : m == slice) {
+                result = mixin("T.", m);
+                return result;
+            }
+        }
+        result = Fault.invalid;
+        return result;
+    } else {
+        switch (str) {
+            static foreach (m; __traits(allMembers, T)) {
+                mixin("case m: { result = T.", m, "; return result; }");
+            }
+            default:
+                result = Fault.invalid;
+                return result;
+        }
+    }
+}
+
+/// Converts the string to a C string.
+@trusted
+Maybe!IStrz toStrz(IStr str) {
+    static char[defaultAsciiBufferSize] buffer = void;
+
+    if (buffer.length < str.length + 1) return Maybe!IStrz(Fault.overflow);
+    buffer.copyChars(str);
+    buffer[str.length] = '\0';
+    return Maybe!IStrz(buffer.ptr);
+}
+
+// Function test.
+@trusted
+unittest {
+    enum TestEnum {
+        one,
+        two,
+        oneAndTwo,
+    }
+
+    char[128] buffer = void;
+    Str str;
+
+    assert(hashFnv32a("") == 2166136261U);
+    assert(hashFnv32a("a") == 3826002220U);
+    assert(hashFnv32a("hello") == 1335831723U);
+    assert(hashFnv32a("hello") == hashFnv32a("hello"));
+    assert(hashFnv32a("hello") != hashFnv32a("world"));
+    assert(hashFnv64a("") == 14695981039346656037UL);
+    assert(hashFnv64a("a") == 12638187200555641996UL);
+    assert(hashFnv64a("hello") == 11831194018420276491uL);
+    assert(hashFnv64a("hello") == hashFnv64a("hello"));
+    assert(hashFnv64a("hello") != hashFnv64a("world"));
+
+    assert(isDigit('?') == false);
+    assert(isDigit('0') == true);
+    assert(isDigit('9') == true);
+    assert(isUpper('h') == false);
+    assert(isUpper('H') == true);
+    assert(isLower('H') == false);
+    assert(isLower('h') == true);
+    assert(isSpace('?') == false);
+    assert(isSpace('\r') == true);
+    assert(isStrz("hello") == false);
+    assert(isStrz("hello\0") == true);
+
+    str = buffer[];
+    str.copyStr("Hello");
+    assert(str == "Hello");
+    str.toUpper();
+    assert(str == "HELLO");
+    str.toLower();
+    assert(str == "hello");
+
+    str = buffer[];
+    str.copyStr("Hello\0");
+    assert(isStrz(str) == true);
+    assert(str.ptr.strzLength + 1 == str.length);
+
+    str = buffer[];
+    str.copyStr("Hello");
+    assert(str.equalsNoCase("HELLO") == true);
+    assert(str.startsWith("H") == true);
+    assert(str.startsWith("Hell") == true);
+    assert(str.startsWith("Hello") == true);
+    assert(str.endsWith("o") == true);
+    assert(str.endsWith("ello") == true);
+    assert(str.endsWith("Hello") == true);
+
+    str = buffer[];
+    str.copyStr("hello hello world.");
+    assert(str.countItem("hello") == 2);
+    assert(str.findStart("HELLO") == -1);
+    assert(str.findStart("hello") == 0);
+    assert(str.findEnd("HELLO") == -1);
+    assert(str.findEnd("hello") == 6);
+
+    str = buffer[];
+    str.copyStr(" Hello world. ");
+    assert(str.trimStart() == "Hello world. ");
+    assert(str.trimEnd() == " Hello world.");
+    assert(str.trim() == "Hello world.");
+    assert(str.removePrefix("Hello") == str);
+    assert(str.trim().removePrefix("Hello") == " world.");
+    assert(str.removeSuffix("world.") == str);
+    assert(str.trim().removeSuffix("world.") == "Hello ");
+    assert(str.advanceStr(0) == str);
+    assert(str.advanceStr(1) == str[1 .. $]);
+    assert(str.advanceStr(str.length) == "");
+    assert(str.advanceStr(str.length + 1) == "");
+
+    str = buffer[];
+    str.copyStr("999: Nine Hours, Nine Persons, Nine Doors");
+    assert(str.split(',').length == 3);
+    assert(str.split(',')[0] == "999: Nine Hours");
+    assert(str.split(',')[1] == " Nine Persons");
+    assert(str.split(',')[2] == " Nine Doors");
+
+    version (Windows) {
+    } else {
+        assert(pathConcat("one", "two") == "one/two");
+        assert(pathConcat("one", "/two") == "one/two");
+        assert(pathConcat("one", "/two/") == "one/two");
+        assert(pathConcat("one/", "/two/") == "one/two");
+        assert(pathConcat("/one/", "/two/") == "/one/two");
+        assert(pathConcat("", "two/") == "two");
+        assert(pathConcat("", "/two/") == "/two");
+    }
+    assert(isAbsolutePath("\\\\dw", PathSepStyle.windows) == true);
+    assert(isAbsolutePath("C:/dw", PathSepStyle.windows) == true);
+    assert(isAbsolutePath("c:/dw", PathSepStyle.windows) == true);
+    assert(isAbsolutePath("C:dw", PathSepStyle.windows) == false);
+    assert(isAbsolutePath("c:dw", PathSepStyle.windows) == false);
+    assert(isAbsolutePath("C:", PathSepStyle.windows) == false);
+    assert(isAbsolutePath("c:", PathSepStyle.windows) == false);
+    assert(pathConcat("one", "two").pathDirName() == "one");
+    assert(pathConcat("one").pathDirName() == ".");
+    assert(pathConcat("one.csv").pathExtName() == ".csv");
+    assert(pathConcat("one").pathExtName() == "");
+    assert(pathConcat("one", "two").pathBaseName() == "two");
+    assert(pathConcat("one").pathBaseName() == "one");
+    assert(pathFmt("one/two") == pathConcat("one", "two"));
+    assert(pathFmt("one\\two") == pathConcat("one", "two"));
+
+    // -- BEGIN skipValue
+    // Basic usage
+    str = buffer[];
+    str.copyStr("one,two,three");
+    assert(skipValue(str, ",") == "one");
+    assert(skipValue(str, ",") == "two");
+    assert(skipValue(str, ",") == "three");
+    assert(str.length == 0);
+
+    // Trailing separator
+    str = buffer[];
+    str.copyStr("one,two,");
+    assert(skipValue(str, ",") == "one");
+    assert(skipValue(str, ",") == "two");
+    assert(skipValue(str, ",") == "");
+    assert(str.length == 0);
+
+    // Leading separator
+    str = buffer[];
+    str.copyStr(",one,two");
+    assert(skipValue(str, ",") == "");
+    assert(skipValue(str, ",") == "one");
+    assert(skipValue(str, ",") == "two");
+    assert(str.length == 0);
+
+    // Single element, no separator
+    str = buffer[];
+    str.copyStr("hello");
+    assert(skipValue(str, ",") == "hello");
+    assert(str.length == 0);
+
+    // Empty string
+    str = buffer[];
+    str.copyStr("");
+    assert(skipValue(str, ",") == "");
+    assert(str.length == 0);
+
+    // Empty separator
+    str = buffer[];
+    str.copyStr("hello");
+    assert(skipValue(str, "") == "hello");
+    assert(str.length == 0);
+
+    // Multi-char separator
+    str = buffer[];
+    str.copyStr("one\r\ntwo\r\nthree");
+    assert(skipValue(str, "\r\n") == "one");
+    assert(skipValue(str, "\r\n") == "two");
+    assert(skipValue(str, "\r\n") == "three");
+    assert(str.length == 0);
+
+    // Separator longer than remaining string
+    str = buffer[];
+    str.copyStr("hi");
+    assert(skipValue(str, "hello") == "hi");
+    assert(str.length == 0);
+
+    // Only separators
+    str = buffer[];
+    str.copyStr(",,,");
+    assert(skipValue(str, ",") == "");
+    assert(skipValue(str, ",") == "");
+    assert(skipValue(str, ",") == "");
+    assert(str.length == 0);
+
+    // skipExtra collapses consecutive separators
+    str = buffer[];
+    str.copyStr("a  b   c");
+    assert(skipValue(str, " ", true) == "a");
+    assert(skipValue(str, " ", true) == "b");
+    assert(skipValue(str, " ", true) == "c");
+    assert(str.length == 0);
+
+    // skipExtra=false preserves consecutive separators
+    str = buffer[];
+    str.copyStr("a  b");
+    assert(skipValue(str, " ", false) == "a");
+    assert(skipValue(str, " ", false) == "");
+    assert(skipValue(str, " ", false) == "b");
+    assert(str.length == 0);
+
+    // Whitespace values preserved without skipExtra
+    str = buffer[];
+    str.copyStr("one, two , three");
+    assert(skipValue(str, ",") == "one");
+    assert(skipValue(str, ",") == " two ");
+    assert(skipValue(str, ",") == " three");
+    assert(str.length == 0);
+    // -- END skipValue
+
+    assert(boolToStr(false) == "false");
+    assert(boolToStr(false, true) == "F");
+    assert(boolToStr(false, true, true) == "f");
+    assert(boolToStr(true) == "true");
+    assert(boolToStr(true, true) == "T");
+    assert(boolToStr(true, true, true) == "t");
+    assert(charToStr('L') == "L");
+
+    assert(unsignedToStr(0) == "0");
+    assert(unsignedToStr(69) == "69");
+    assert(signedToStr(0) == "0");
+    assert(signedToStr(69) == "69");
+    assert(signedToStr(-69) == "-69");
+    assert(signedToStr(-69) == "-69");
+
+    assert(floatingToStr(0.00, 0) == "0");
+    assert(floatingToStr(0.00, 1) == "0.0");
+    assert(floatingToStr(0.00, 2) == "0.00");
+    assert(floatingToStr(0.00, 3) == "0.000");
+    assert(floatingToStr(0.60, 1) == "0.6");
+    assert(floatingToStr(0.60, 2) == "0.60");
+    assert(floatingToStr(0.60, 3) == "0.600");
+    assert(floatingToStr(0.09, 1) == "0.0");
+    assert(floatingToStr(0.09, 2) == "0.09");
+    assert(floatingToStr(0.09, 3) == "0.090");
+    assert(floatingToStr(69.0, 1) == "69.0");
+    assert(floatingToStr(69.0, 2) == "69.00");
+    assert(floatingToStr(69.0, 3) == "69.000");
+    assert(floatingToStr(-0.69, 0) == "0");
+    assert(floatingToStr(-0.69, 1) == "-0.6");
+    assert(floatingToStr(-0.69, 2) == "-0.69");
+    assert(floatingToStr(-0.69, 3) == "-0.690");
+    assert(floatingToStr(double.nan) == "nan");
+
+    assert(strzToStr("Hello\0") == "Hello");
+
+    assert(enumToStr(TestEnum.one) == "one");
+    assert(enumToStr(TestEnum.two) == "two");
+
+    assert(toBool("false").isSome == true);
+    assert(toBool("true").isSome == true);
+    assert(toBool("F").isSome == true);
+    assert(toBool("f").isSome == true);
+    assert(toBool("T").isSome == true);
+    assert(toBool("t").isSome == true);
+    assert(toBool("false", true).isSome == true);
+    assert(toBool("true", true).isSome == true);
+    assert(toBool("F", true).isSome == false);
+    assert(toBool("f", true).isSome == false);
+    assert(toBool("T", true).isSome == false);
+    assert(toBool("t", true).isSome == false);
+    assert(toBool("false", true, true).isSome == true);
+    assert(toBool("true", true, true).isSome == true);
+    assert(toBool("F", true, true).isSome == false);
+    assert(toBool("f", true, true).isSome == false);
+    assert(toBool("T", true, true).isSome == false);
+    assert(toBool("t", true, true).isSome == false);
+    assert(toBool("false", false, true).isSome == true);
+    assert(toBool("true", false, true).isSome == true);
+    assert(toBool("F", false, true).isSome == true);
+    assert(toBool("f", false, true).isSome == false);
+    assert(toBool("T", false, true).isSome == true);
+    assert(toBool("t", false, true).isSome == false);
+
+    assert(toUnsigned("1_069").isSome == true);
+    assert(toUnsigned("1_069").getOr() == 1069);
+    assert(toUnsigned("+1069").isSome == true);
+    assert(toUnsigned("+1069").getOr() == 1069);
+    assert(toUnsigned("1069").isSome == true);
+    assert(toUnsigned("1069").getOr() == 1069);
+    assert(toUnsigned('+').isSome == false);
+    assert(toUnsigned('+').getOr() == 0);
+    assert(toUnsigned('0').isSome == true);
+    assert(toUnsigned('0').getOr() == 0);
+    assert(toUnsigned('9').isSome == true);
+    assert(toUnsigned('9').getOr() == 9);
+
+    assert(toSigned("1_069").isSome == true);
+    assert(toSigned("1_069").getOr() == 1069);
+    assert(toSigned("-1069").isSome == true);
+    assert(toSigned("-1069").getOr() == -1069);
+    assert(toSigned("+1069").isSome == true);
+    assert(toSigned("+1069").getOr() == 1069);
+    assert(toSigned("1069").isSome == true);
+    assert(toSigned("1069").getOr() == 1069);
+    assert(toSigned('+').isSome == false);
+    assert(toSigned('+').getOr() == 0);
+    assert(toSigned('0').isSome == true);
+    assert(toSigned('0').getOr() == 0);
+    assert(toSigned('9').isSome == true);
+    assert(toSigned('9').getOr() == 9);
+
+    assert(toFloating("1_069").isSome == true);
+    assert(toFloating(".1069").isSome == false);
+    assert(toFloating("1069.").isSome == false);
+    assert(toFloating(".").isSome == false);
+    assert(toFloating("-1069.-69").isSome == false);
+    assert(toFloating("-1069.+69").isSome == false);
+    assert(toFloating("-1069").isSome == true);
+    assert(toFloating("-1069").getOr() == -1069);
+    assert(toFloating("+1069").isSome == true);
+    assert(toFloating("+1069").getOr() == 1069);
+    assert(toFloating("1069").isSome == true);
+    assert(toFloating("1069").getOr() == 1069);
+    assert(toFloating("1069.0").isSome == true);
+    assert(toFloating("1069.0").getOr() == 1069);
+    assert(toFloating("-1069.0095").isSome == true);
+    assert(toFloating("-1069.0095").getOr() == -1069.0095);
+    assert(toFloating("+1069.0095").isSome == true);
+    assert(toFloating("+1069.0095").getOr() == 1069.0095);
+    assert(toFloating("1069.0095").isSome == true);
+    assert(toFloating("1069.0095").getOr() == 1069.0095);
+    assert(toFloating("-0.0095").isSome == true);
+    assert(toFloating("-0.0095").getOr() == -0.0095);
+    assert(toFloating("+0.0095").isSome == true);
+    assert(toFloating("+0.0095").getOr() == 0.0095);
+    assert(toFloating("0.0095").isSome == true);
+    assert(toFloating("0.0095").getOr() == 0.0095);
+    assert(toFloating('+').isSome == false);
+    assert(toFloating('0').isSome == true);
+    assert(toFloating('9').isSome == true);
+    assert(toFloating('9').getOr() == 9);
+    assert(!(toFloating("nan").getOr() == double.nan));
+
+    assert(toEnum!TestEnum("?").isSome == false);
+    assert(toEnum!TestEnum("?").getOr() == TestEnum.one);
+    assert(toEnum!TestEnum("one").isSome == true);
+    assert(toEnum!TestEnum("one").getOr() == TestEnum.one);
+    assert(toEnum!TestEnum("two").isSome == true);
+    assert(toEnum!TestEnum("two").getOr() == TestEnum.two);
+    assert(toEnum!TestEnum("TWO").isSome == false);
+    assert(toEnum!(TestEnum, true)("TWO").isSome == true);
+    assert(toEnum!(TestEnum, true, false)("  TWO  ").isSome == false);
+    assert(toEnum!(TestEnum, true, true)("  TWO  ").isSome == true);
+    assert(toEnum!(TestEnum, true, true)(" -TWO- ").isSome == true);
+    assert(toEnum!(TestEnum, true, true)("One and Two").isSome == true);
+    assert(toEnum!(TestEnum, true, true)("one-and-two").isSome == true);
+
+    assert(toStrz("Hello").getOr().strzLength == "Hello".length);
+    assert(toStrz("Hello").getOr().strzToStr() == "Hello");
+    assert(fmt("Hello {}!", "world") == "Hello world!");
+    assert(fmt("({}, {})", -69, -420) == "(-69, -420)");
+
+    assert(fmt("Number: {}", 1.54321.flo(0)) == "Number: 1");
+    assert(fmt("Number: {}", 1.54321.flo(1)) == "Number: 1.5");
+    assert(fmt("Number: {}", 1.54321.flo(2)) == "Number: 1.54");
+}

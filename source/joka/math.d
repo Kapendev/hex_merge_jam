@@ -1,0 +1,2686 @@
+// ---
+// Copyright 2026 Alexandros F. G. Kapretsos
+// SPDX-License-Identifier: MIT
+// Email: alexandroskapretsos@gmail.com
+// Project: https://github.com/Kapendev/joka
+// ---
+
+/// The `math` module provides mathematical data structures and functions.
+module joka.math;
+
+import joka.types;
+
+version (WASI) {
+    version = JokaMathStubs;
+} else version (WASM4) {
+    version = JokaMathStubs;
+}
+
+@safe nothrow @nogc:
+
+enum epsilon = 0.0001;                                /// The value of epsilon.
+enum euler   = 2.71828182845904523536028747135266249; /// The value of Euler's number.
+enum log2e   = 1.44269504088896340735992468100189214; /// The value of log2(e).
+enum log10e  = 0.43429448190325182765112891891660508; /// The value of log10(e).
+enum ln2     = 0.69314718055994530941723212145817656; /// The value of ln(2).
+enum ln10    = 2.30258509299404568401799145468436421; /// The value of ln(10).
+enum pi      = 3.14159265358979323846264338327950288; /// The value of PI.
+enum pi2     = pi / 2.0;                              /// The value of PI / 2.
+enum pi4     = pi / 4.0;                              /// The value of PI / 4.
+enum pi180   = pi / 180.0;                            /// The value of PI / 180.
+enum dpi     = 1.0 / pi;                              /// The value of 1 / PI.
+enum dpi2    = 2.0 / pi;                              /// The value of 2 / PI.
+enum dpi180  = 180.0 / pi;                            /// The value of 180 / PI.
+enum sqrt2   = 1.41421356237309504880168872420969808; /// The value of sqrt(2).
+enum dsqrt2  = 0.70710678118654752440084436210484903; /// The value of 1 / sqrt(2).
+
+enum blank   = Rgba();              /// #00000000
+enum black   = Rgba(0);             /// #000000FF
+enum white   = Rgba(255);           /// #FFFFFFFF
+enum red     = Rgba(255, 0, 0);     /// #FF0000FF
+enum green   = Rgba(0, 255, 0);     /// #00FF00FF
+enum blue    = Rgba(0, 0, 255);     /// #0000FFFF
+enum yellow  = Rgba(255, 255, 0);   /// #FFFF00FF
+enum magenta = Rgba(255, 0, 255);   /// #FF00FFFF
+enum cyan    = Rgba(0, 255, 255);   /// #00FFFFFF
+enum pink    = Rgba(255, 192, 204); /// #FFC0CCFF
+enum orange  = Rgba(255, 165, 0);   /// #FFA500FF
+enum beige   = Rgba(240, 235, 210); /// #F0EBD2FF
+enum brown   = Rgba(165, 72, 42);   /// #A5482AFF
+enum maroon  = Rgba(128, 0, 0);     /// #800000FF
+enum gray1   = Rgba(32, 32, 32);    /// #202020FF
+enum gray2   = Rgba(96, 96, 96);    /// #606060FF
+enum gray3   = Rgba(159, 159, 159); /// #9F9F9FFF
+enum gray4   = Rgba(223, 223, 223); /// #DFDFDFFF
+enum gray    = gray2;               /// #606060FF
+
+alias Vec2  = GVec2!float; /// A 2D vector using floats.
+alias Vec3  = GVec3!float; /// A 3D vector using floats.
+alias Vec4  = GVec4!float; /// A 4D vector using floats.
+alias IVec2 = GVec2!int;   /// A 2D vector using ints.
+alias IVec3 = GVec3!int;   /// A 3D vector using ints.
+alias IVec4 = GVec4!int;   /// A 4D vector using ints.
+
+alias Rect  = GRect!float;        /// A 2D rectangle using floats.
+alias Circ  = GCirc!float;        /// A 2D circle using floats.
+alias Line  = GLine!float;        /// A 2D line using floats.
+alias IRect = GRect!int;          /// A 2D rectangle using ints.
+alias SRect = GRect!(int, short); /// A 2D rectangle using ints for the position and shorts for the size.
+
+alias Tween  = GTween!float; /// A tween using floats.
+alias Tween2 = GTween!Vec2;  /// A tween using 2D vectors.
+
+/// A function used for rounding.
+alias RoundingFunc = float function(float x);
+/// A function used for rounding.
+alias Rounding64Func = double function(double x);
+/// A function used for easing.
+alias EasingFunc = float function(float x);
+
+/// A type representing rounding functions.
+enum Rounding : ubyte {
+    none,  /// No rounding.
+    floor, /// Round down.
+    round, /// Round to nearest.
+    ceil,  /// Round up.
+}
+
+/// A type representing easing functions.
+enum Easing : ubyte {
+    linear,       /// Constant speed.
+    inSine,       /// Slow start.
+    outSine,      /// Slow end.
+    inOutSine,    /// Slow start and end.
+    inCubic,      /// Cubic in.
+    outCubic,     /// Cubic out.
+    inOutCubic,   /// Cubic in-out.
+    inQuint,      /// Quintic in.
+    outQuint,     /// Quintic out.
+    inOutQuint,   /// Quintic in-out.
+    inCirc,       /// Circular in.
+    outCirc,      /// Circular out.
+    inOutCirc,    /// Circular in-out.
+    inElastic,    /// Elastic in.
+    outElastic,   /// Elastic out.
+    inOutElastic, /// Elastic in-out.
+    inQuad,       /// Quadratic in.
+    outQuad,      /// Quadratic out.
+    inOutQuad,    /// Quadratic in-out.
+    inQuart,      /// Quartic in.
+    outQuart,     /// Quartic out.
+    inOutQuart,   /// Quartic in-out.
+    inExpo,       /// Exponential in.
+    outExpo,      /// Exponential out.
+    inOutExpo,    /// Exponential in-out.
+    inBack,       /// Back in.
+    outBack,      /// Back out.
+    inOutBack,    /// Back in-out.
+    inBounce,     /// Bounce in.
+    outBounce,    /// Bounce out.
+    inOutBounce,  /// Bounce in-out.
+}
+
+/// A type that describes how a tween should update.
+enum TweenMode : ubyte {
+    bomb, /// It stops updating when it reaches the beginning or end of the animation.
+    loop, /// It returns to the beginning or end of the animation when it reaches the beginning or end of the animation.
+    yoyo, /// It reverses the given delta time when it reaches the beginning or end of the animation.
+}
+
+/// A type representing relative points.
+enum Hook : ubyte {
+    topLeft,     /// The top left point.
+    top,         /// The top point.
+    topRight,    /// The top right point.
+    left,        /// The left point.
+    center,      /// The center point.
+    right,       /// The right point.
+    bottomLeft,  /// The bottom left point.
+    bottom,      /// The bottom point.
+    bottomRight, /// The bottom right point.
+}
+
+/// A set of 4 integer margins.
+struct Margin {
+    int left;   /// The left side.
+    int top;    /// The top side.
+    int right;  /// The right side.
+    int bottom; /// The bottom side.
+
+    @safe nothrow @nogc:
+
+    this(int left, int top, int right, int bottom) {
+        this.left = left;
+        this.top = top;
+        this.right = right;
+        this.bottom = bottom;
+    }
+
+    this(int left) {
+        this(left, left, left, left);
+    }
+}
+
+/// A RGBA color using ubytes.
+struct Rgba {
+    ubyte r; /// The R component of the color.
+    ubyte g; /// The G component of the color.
+    ubyte b; /// The B component of the color.
+    ubyte a; /// The A component of the color.
+
+    alias items this;
+
+    enum form = "rgba";           /// The form of the color.
+    enum zero = Rgba(0, 0, 0, 0); /// The zero value of the color.
+    enum one  = Rgba(1, 1, 1, 1); /// The one value of the color.
+    enum length = 4;              /// The length of the color.
+
+    @safe nothrow @nogc:
+
+    @trusted
+    IStr toStr() {
+        IStr[4] fmtStrs = ["({}", " {}", " {}", " {})"];
+        return fmtSignedGroup(fmtStrs, r, g, b, a);
+    }
+
+    alias toString = toStr;
+
+    pragma(inline, true) {
+        this(ubyte r, ubyte g, ubyte b, ubyte a = 255) {
+            this.r = r;
+            this.g = g;
+            this.b = b;
+            this.a = a;
+        }
+
+        this(ubyte r) {
+            this(r, r, r, 255);
+        }
+
+        @trusted ubyte[] items() {
+            return (cast(ubyte*) &this)[0 .. 4];
+        }
+
+        bool isZero() {
+            return r == 0 && g == 0 && b == 0 && a == 0;
+        }
+
+        bool isOne() {
+            return r == 1 && g == 1 && b == 1 && a == 1;
+        }
+
+        Rgba rrrr() {
+            return Rgba(r, r, r, r);
+        }
+
+        Rgba gggg() {
+            return Rgba(g, g, g, g);
+        }
+
+        Rgba bbbb() {
+            return Rgba(b, b, b, b);
+        }
+
+        Rgba aaaa() {
+            return Rgba(a, a, a, a);
+        }
+
+        /// Returns a color with just the alpha modified.
+        Rgba alpha(ubyte value) {
+            return Rgba(r, g, b, value);
+        }
+    }
+
+    @trusted nothrow @nogc {
+        ubyte min() {
+            auto result = r;
+            foreach (item; items.ptr[1 .. length]) if (item < result) result = item;
+            return result;
+        }
+
+        ubyte max() {
+            auto result = r;
+            foreach (item; items.ptr[1 .. length]) if (item > result) result = item;
+            return result;
+        }
+    }
+}
+
+/// A generic 2D vector.
+struct GVec2(T) {
+    T x = 0; /// The X component of the vector.
+    T y = 0; /// The Y component of the vector.
+
+    alias items this;
+
+    enum form   = "xy";       /// The form of the vector.
+    enum zero   = GVec2!T(0); /// The zero value of the vector.
+    enum one    = GVec2!T(1); /// The one value of the vector.
+    enum length = 2;          /// The length of the vector.
+
+    static if (T.sizeof > float.sizeof) {
+        enum is64 = true;
+        alias Float = double;
+    } else {
+        enum is64 = false;
+        alias Float = float;
+    }
+
+    @safe nothrow @nogc:
+
+    @trusted
+    IStr toStr() {
+        IStr[2] fmtStrs = ["({}", " {})"];
+        static if (__traits(isFloating, T)) {
+            return fmtFloatingGroup(fmtStrs, x, y);
+        } else {
+            return fmtSignedGroup(fmtStrs, x, y);
+        }
+    }
+
+    alias toString = toStr;
+
+    pragma(inline, true) {
+        this(T x, T y) {
+            this.x = x;
+            this.y = y;
+        }
+
+        this(T x) {
+            this(x, x);
+        }
+
+        @trusted T[] items() {
+            return (cast(T*) &this)[0 .. 2];
+        }
+
+        bool isZero() {
+            return x == 0 && y == 0;
+        }
+
+        bool isOne() {
+            return x == 1 && y == 1;
+        }
+
+        T chop() {
+            return x;
+        }
+
+        GVec2!T abs() {
+            return GVec2!T(x.abs, y.abs);
+        }
+
+        static if (__traits(isFloating, T)) {
+            GVec2!T floor() {
+                return GVec2!T(x.floor64, y.floor64);
+            }
+
+            GVec2!T round() {
+                return GVec2!T(x.round64, y.round64);
+            }
+
+            GVec2!T ceil() {
+                return GVec2!T(x.ceil64, y.ceil64);
+            }
+
+            GVec2!T applyRounding(Rounding type) {
+                final switch (type) {
+                    case Rounding.none: return this;
+                    case Rounding.floor: return floor();
+                    case Rounding.round: return round();
+                    case Rounding.ceil: return ceil();
+                }
+            }
+        }
+
+        GVec2!T yx() {
+            return GVec2!T(y, x);
+        }
+
+        GVec2!T xx() {
+            return GVec2!T(x, x);
+        }
+
+        GVec2!T yy() {
+            return GVec2!T(y, y);
+        }
+    }
+
+    Float magnitudeSquared() {
+        return (x * x + y * y);
+    }
+
+    static if (__traits(isFloating, T)) {
+        Float magnitude() {
+            return (x * x + y * y).sqrt64;
+        }
+
+        Float distanceTo(GVec2!T to) {
+            return (to - this).magnitude;
+        }
+
+        GVec2!Float normalize() {
+            auto m = magnitude;
+            if (m == 0) return GVec2!Float();
+            return this / GVec2!Float(m);
+        }
+
+        GVec2!Float directionTo(GVec2!T to) {
+            return (to - this).normalize();
+        }
+
+        Float angle() {
+            return atan264(y, x);
+        }
+
+        GVec2!T rotate(T radians) {
+            auto vsin = sin64(radians);
+            auto vcos = cos64(radians);
+            return GVec2!Float(x * vcos - y * vsin, x * vsin + y * vcos);
+        }
+    }
+
+    pragma(inline, true) @trusted nothrow @nogc {
+        GVec2!T opUnary(IStr op)() {
+            return mixin(
+                "GVec2!T(", op, "x,", op, "y)"
+            );
+        }
+
+        GVec2!T opBinary(IStr op)(GVec2!T rhs) {
+            return mixin(
+                "GVec2!T(cast(T)(x", op, "rhs.x),cast(T)(y", op, "rhs.y))"
+            );
+        }
+
+        GVec2!T opBinary(IStr op)(T rhs) {
+            return opBinary!op(GVec2!T(rhs, rhs));
+        }
+
+        GVec2!T opBinaryRight(IStr op)(T lhs) {
+            return GVec2!T(lhs, lhs).opBinary!op(this);
+        }
+
+        void opOpAssign(IStr op)(GVec2!T rhs) {
+            mixin("x", op, "=rhs.x;y", op, "=rhs.y;");
+        }
+
+        void opOpAssign(IStr op)(T rhs) {
+            return opOpAssign!op(GVec2!T(rhs, rhs));
+        }
+    }
+
+    @trusted nothrow @nogc {
+        GVec2!T _swizzleN(G)(const(G)[] args...) {
+            if (args.length != length) assert(0, "Wrong swizzle length.");
+            GVec2!T result = void;
+            foreach (i, arg; args) result.items.ptr[i] = items[arg];
+            return result;
+        }
+
+        GVec2!T _swizzleC(IStr args...) {
+            if (args.length != length) assert(0, "Wrong swizzle length.");
+            GVec2!T result = void;
+            foreach (i, arg; args) {
+                auto hasBadArg = true;
+                foreach (j, c; form) if (c == arg) {
+                    result.items.ptr[i] = items.ptr[j];
+                    hasBadArg = false;
+                    break;
+                }
+                if (hasBadArg) assert(0, "Invalid swizzle component.");
+            }
+            return result;
+        }
+
+        GVec2!T swizzle(G)(const(G)[] args...) {
+            static if (is(G == char)) {
+                return _swizzleC(args);
+            } else {
+                return _swizzleN(args);
+            }
+        }
+
+        T min() {
+            auto result = x;
+            foreach (item; items.ptr[1 .. length]) if (item < result) result = item;
+            return result;
+        }
+
+        T max() {
+            auto result = x;
+            foreach (item; items.ptr[1 .. length]) if (item > result) result = item;
+            return result;
+        }
+    }
+}
+
+/// A generic 3D vector.
+struct GVec3(T) {
+    T x = 0; /// The X component of the vector.
+    T y = 0; /// The Y component of the vector.
+    T z = 0; /// The Z component of the vector.
+
+    alias items this;
+
+    enum form = "xyz";      /// The form of the vector.
+    enum zero = GVec3!T(0); /// The zero value of the vector.
+    enum one  = GVec3!T(1); /// The one value of the vector.
+    enum length = 3;        /// The length of the vector.
+
+    static if (T.sizeof > float.sizeof) {
+        enum is64 = true;
+        alias Float = double;
+    } else {
+        enum is64 = false;
+        alias Float = float;
+    }
+
+    @safe nothrow @nogc:
+
+    @trusted
+    IStr toStr() {
+        IStr[3] fmtStrs = ["({}", " {}", " {})"];
+        static if (__traits(isFloating, T)) {
+            return fmtFloatingGroup(fmtStrs, x, y, z);
+        } else {
+            return fmtSignedGroup(fmtStrs, x, y, z);
+        }
+    }
+
+    alias toString = toStr;
+
+    pragma(inline, true) {
+        this(T x, T y, T z) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+        }
+
+        this(T x) {
+            this(x, x, x);
+        }
+
+        this(GVec2!T xy, T z) {
+            this(xy.x, xy.y, z);
+        }
+
+        @trusted T[] items() {
+            return (cast(T*) &this)[0 .. 3];
+        }
+
+        bool isZero() {
+            return x == 0 && y == 0 && z == 0;
+        }
+
+        bool isOne() {
+            return x == 1 && y == 1 && z == 1;
+        }
+
+        GVec2!T chop() {
+            return GVec2!T(x, y);
+        }
+
+        GVec3!T abs() {
+            return GVec3!T(x.abs, y.abs, z.abs);
+        }
+
+        static if (__traits(isFloating, T)) {
+            GVec3!T floor() {
+                return GVec3!T(x.floor64, y.floor64, z.floor64);
+            }
+
+            GVec3!T round() {
+                return GVec3!T(x.round64, y.round64, z.round64);
+            }
+
+            GVec3!T ceil() {
+                return GVec3!T(x.ceil64, y.ceil64, z.ceil64);
+            }
+
+            GVec3!T applyRounding(Rounding type) {
+                final switch (type) {
+                    case Rounding.none: return this;
+                    case Rounding.floor: return floor();
+                    case Rounding.round: return round();
+                    case Rounding.ceil: return ceil();
+                }
+            }
+        }
+
+        GVec2!T yx() {
+            return GVec2!T(y, x);
+        }
+
+        GVec2!T xx() {
+            return GVec2!T(x, x);
+        }
+
+        GVec2!T yy() {
+            return GVec2!T(y, y);
+        }
+
+        GVec2!T xy() {
+            return GVec2!T(x, y);
+        }
+
+        GVec2!T yz() {
+            return GVec2!T(y, z);
+        }
+    }
+
+    Float magnitudeSquared() {
+        return (x * x + y * y + z * z);
+    }
+
+    static if (__traits(isFloating, T)) {
+        Float magnitude() {
+            return (x * x + y * y + z * z).sqrt64;
+        }
+
+        Float distanceTo(GVec3!T to) {
+            return (to - this).magnitude;
+        }
+
+        GVec3!Float normalize() {
+            auto m = magnitude;
+            if (m == 0) return GVec3!Float();
+            return this / GVec3!Float(m);
+        }
+
+        GVec3!Float directionTo(GVec3!T to) {
+            return (to - this).normalize();
+        }
+    }
+
+    pragma(inline, true) @trusted nothrow @nogc {
+        GVec3!T opUnary(IStr op)() {
+            return mixin(
+                "GVec3!T(", op, "x,", op, "y,", op, "z)"
+            );
+        }
+
+        GVec3!T opBinary(IStr op)(GVec3!T rhs) {
+            return mixin(
+                "GVec3!T(cast(T)(x", op, "rhs.x),cast(T)(y", op, "rhs.y),cast(T)(z", op, "rhs.z))"
+            );
+        }
+
+        GVec3!T opBinary(IStr op)(T rhs) {
+            return opBinary!op(GVec3!T(rhs, rhs, rhs));
+        }
+
+        GVec3!T opBinaryRight(IStr op)(T lhs) {
+            return GVec3!T(lhs, lhs, lhs).opBinary!op(this);
+        }
+
+        void opOpAssign(IStr op)(GVec3!T rhs) {
+            mixin("x", op, "=rhs.x;y", op, "=rhs.y;z", op, "=rhs.z;");
+        }
+
+        void opOpAssign(IStr op)(T rhs) {
+            return opOpAssign!op(GVec3!T(rhs, rhs, rhs));
+        }
+    }
+
+    @trusted nothrow @nogc {
+        GVec3!T _swizzleN(G)(const(G)[] args...) {
+            if (args.length != length) assert(0, "Wrong swizzle length.");
+            GVec3!T result = void;
+            foreach (i, arg; args) result.items.ptr[i] = items[arg];
+            return result;
+        }
+
+        GVec3!T _swizzleC(IStr args...) {
+            if (args.length != length) assert(0, "Wrong swizzle length.");
+            GVec3!T result = void;
+            foreach (i, arg; args) {
+                auto hasBadArg = true;
+                foreach (j, c; form) if (c == arg) {
+                    result.items.ptr[i] = items.ptr[j];
+                    hasBadArg = false;
+                    break;
+                }
+                if (hasBadArg) assert(0, "Invalid swizzle component.");
+            }
+            return result;
+        }
+
+        GVec3!T swizzle(G)(const(G)[] args...) {
+            static if (is(G == char)) {
+                return _swizzleC(args);
+            } else {
+                return _swizzleN(args);
+            }
+        }
+
+        T min() {
+            auto result = x;
+            foreach (item; items.ptr[1 .. length]) if (item < result) result = item;
+            return result;
+        }
+
+        T max() {
+            auto result = x;
+            foreach (item; items.ptr[1 .. length]) if (item > result) result = item;
+            return result;
+        }
+    }
+}
+
+/// A generic 4D vector.
+struct GVec4(T) {
+    T x = 0; /// The X component of the vector.
+    T y = 0; /// The Y component of the vector.
+    T z = 0; /// The Z component of the vector.
+    T w = 0; /// The W component of the vector.
+
+    alias items this;
+
+    enum form = "xyzw";     /// The form of the vector.
+    enum zero = GVec4!T(0); /// The zero value of the vector.
+    enum one = GVec4!T(1);  /// The one value of the vector.
+    enum length = 4;        /// The length of the vector.
+
+    static if (T.sizeof > float.sizeof) {
+        enum is64 = true;
+        alias Float = double;
+    } else {
+        enum is64 = false;
+        alias Float = float;
+    }
+
+    @safe nothrow @nogc:
+
+    @trusted
+    IStr toStr() {
+        IStr[4] fmtStrs = ["({}", " {}", " {}", " {})"];
+        static if (__traits(isFloating, T)) {
+            return fmtFloatingGroup(fmtStrs, x, y, z, w);
+        } else {
+            return fmtSignedGroup(fmtStrs, x, y, z, w);
+        }
+    }
+
+    alias toString = toStr;
+
+    pragma(inline, true) {
+        this(T x, T y, T z, T w) {
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.w = w;
+        }
+
+        this(T x) {
+            this(x, x, x, x);
+        }
+
+        this(GVec2!T xy, GVec2!T zw) {
+            this(xy.x, xy.y, zw.x, zw.y);
+        }
+
+        this(GVec3!T xyz, T w) {
+            this(xyz.x, xyz.y, xyz.z, w);
+        }
+
+        @trusted T[] items() {
+            return (cast(T*) &this)[0 .. 4];
+        }
+
+        bool isZero() {
+            return x == 0 && y == 0 && z == 0 && w == 0;
+        }
+
+        bool isOne() {
+            return x == 1 && y == 1 && z == 1 && w == 1;
+        }
+
+        GVec3!T chop() {
+            return GVec3!T(x, y, z);
+        }
+
+        GVec4!T abs() {
+            return GVec4!T(x.abs, y.abs, z.abs, w.abs);
+        }
+
+        static if (__traits(isFloating, T)) {
+            GVec4!T floor() {
+                return GVec4!T(x.floor64, y.floor64, z.floor64, w.floor64);
+            }
+
+            GVec4!T round() {
+                return GVec4!T(x.round64, y.round64, z.round64, w.round64);
+            }
+
+            GVec4!T ceil() {
+                return GVec4!T(x.ceil64, y.ceil64, z.ceil64, w.ceil64);
+            }
+
+            GVec4!T applyRounding(Rounding type) {
+                final switch (type) {
+                    case Rounding.none: return this;
+                    case Rounding.floor: return floor();
+                    case Rounding.round: return round();
+                    case Rounding.ceil: return ceil();
+                }
+            }
+        }
+
+        GVec2!T yx() {
+            return GVec2!T(y, x);
+        }
+
+        GVec2!T xx() {
+            return GVec2!T(x, x);
+        }
+
+        GVec2!T yy() {
+            return GVec2!T(y, y);
+        }
+
+        GVec2!T xy() {
+            return GVec2!T(x, y);
+        }
+
+        GVec2!T yz() {
+            return GVec2!T(y, z);
+        }
+    }
+
+    Float magnitudeSquared() {
+        return (x * x + y * y + z * z + w * w);
+    }
+
+    static if (__traits(isFloating, T)) {
+        Float magnitude() {
+            return (x * x + y * y + z * z + w * w).sqrt64;
+        }
+
+        Float distanceTo(GVec4!T to) {
+            return (to - this).magnitude;
+        }
+
+        GVec4!Float normalize() {
+            auto m = magnitude;
+            if (m == 0) return GVec4!Float();
+            return this / GVec4!Float(m);
+        }
+
+        GVec4!Float directionTo(GVec4!T to) {
+            return (to - this).normalize();
+        }
+    }
+
+    pragma(inline, true) @trusted nothrow @nogc {
+        GVec4!T opUnary(IStr op)() {
+            return mixin(
+                "GVec4!T(", op, "x,", op, "y,", op, "z,", op, "w)"
+            );
+        }
+
+        GVec4!T opBinary(IStr op)(GVec4!T rhs) {
+            return mixin(
+                "GVec4!T(cast(T)(x", op, "rhs.x),cast(T)(y", op, "rhs.y),cast(T)(z", op, "rhs.z),cast(T)(w", op, "rhs.w))"
+            );
+        }
+
+        GVec4!T opBinary(IStr op)(T rhs) {
+            return opBinary!op(GVec4!T(rhs, rhs, rhs, rhs));
+        }
+
+        GVec4!T opBinaryRight(IStr op)(T lhs) {
+            return GVec4!T(lhs, lhs, lhs, lhs).opBinary!op(this);
+        }
+
+        void opOpAssign(IStr op)(GVec4!T rhs) {
+            mixin("x", op, "=rhs.x;y", op, "=rhs.y;z", op, "=rhs.z;w", op, "=rhs.w;");
+        }
+
+        void opOpAssign(IStr op)(T rhs) {
+            return opOpAssign!op(GVec4!T(rhs, rhs, rhs, rhs));
+        }
+    }
+
+    @trusted nothrow @nogc {
+        GVec4!T _swizzleN(G)(const(G)[] args...) {
+            if (args.length != length) assert(0, "Wrong swizzle length.");
+            GVec4!T result = void;
+            foreach (i, arg; args) result.items.ptr[i] = items[arg];
+            return result;
+        }
+
+        GVec4!T _swizzleC(IStr args...) {
+            if (args.length != length) assert(0, "Wrong swizzle length.");
+            GVec4!T result = void;
+            foreach (i, arg; args) {
+                auto hasBadArg = true;
+                foreach (j, c; form) if (c == arg) {
+                    result.items.ptr[i] = items.ptr[j];
+                    hasBadArg = false;
+                    break;
+                }
+                if (hasBadArg) assert(0, "Invalid swizzle component.");
+            }
+            return result;
+        }
+
+        GVec4!T swizzle(G)(const(G)[] args...) {
+            static if (is(G == char)) {
+                return _swizzleC(args);
+            } else {
+                return _swizzleN(args);
+            }
+        }
+
+        T min() {
+            auto result = x;
+            foreach (item; items.ptr[1 .. length]) if (item < result) result = item;
+            return result;
+        }
+
+        T max() {
+            auto result = x;
+            foreach (item; items.ptr[1 .. length]) if (item > result) result = item;
+            return result;
+        }
+    }
+}
+
+/// A generic 2D rectangle.
+struct GRect(P, S = P) if (P.sizeof >= S.sizeof) {
+    GVec2!P position; /// The position of the rectangle.
+    GVec2!S size;     /// The size of the rectangle.
+
+    alias Position = P;
+    alias Size = S;
+    alias Self = GRect!(P, S);
+    static if (P.sizeof > float.sizeof) {
+        enum is64 = true;
+        alias Float = double;
+    } else {
+        enum is64 = false;
+        alias Float = float;
+    }
+
+    @safe nothrow @nogc:
+
+    @trusted
+    IStr toStr() {
+        IStr[4] fmtStrs = ["P({}", " {})", " S({}", " {})"];
+        static if (__traits(isFloating, P)) {
+            return fmtFloatingGroup(fmtStrs, position.x, position.y, size.x, size.y);
+        } else {
+            return fmtSignedGroup(fmtStrs, position.x, position.y, size.x, size.y);
+        }
+    }
+
+    alias toString = toStr;
+
+    pragma(inline, true) {
+        this(GVec2!P position, GVec2!S size) {
+            this.position = position;
+            this.size = size;
+        }
+
+        this(GVec2!S size) {
+            this(GVec2!P(), size);
+        }
+
+        this(P x, P y, S w, S h) {
+            this(GVec2!P(x, y), GVec2!S(w, h));
+        }
+
+        this(S w, S h) {
+            this(GVec2!P(), GVec2!S(w, h));
+        }
+
+        this(GVec2!P position, S w, S h) {
+            this(position, GVec2!S(w, h));
+        }
+
+        this(P x, P y, GVec2!S size) {
+            this(GVec2!P(x, y), size);
+        }
+
+        static if (!is(P == S)) {
+            this(GVec2!P position, GVec2!P size) {
+                this.position = position;
+                this.size.x = cast(S) size.x;
+                this.size.y = cast(S) size.y;
+            }
+
+            this(GVec2!P size) {
+                this(GVec2!P(), size);
+            }
+
+            this(P x, P y, P w, P h) {
+                this(GVec2!P(x, y), GVec2!P(w, h));
+            }
+
+            this(P w, P h) {
+                this(GVec2!P(), GVec2!P(w, h));
+            }
+
+            this(GVec2!P position, P w, P h) {
+                this(position, GVec2!P(w, h));
+            }
+
+            this(P x, P y, GVec2!P size) {
+                this(GVec2!P(x, y), size);
+            }
+        }
+
+        /// The X position of the rectangle.
+        @trusted
+        ref P x() {
+            return position.x;
+        }
+
+        /// The Y position of the rectangle.
+        @trusted
+        ref P y() {
+            return position.y;
+        }
+
+        /// The width of the rectangle.
+        @trusted
+        ref S w() {
+            return size.x;
+        }
+
+        /// The height of the rectangle.
+        @trusted
+        ref S h() {
+            return size.y;
+        }
+
+        bool hasSize() {
+            return size.x != 0 && size.y != 0;
+        }
+
+        Self abs() {
+            return Self(position.abs, size.abs);
+        }
+
+        static if (__traits(isFloating, P)) {
+            Self floor() {
+                return Self(position.floor, size.floor);
+            }
+
+            Self round() {
+                return Self(position.round, size.round);
+            }
+
+            Self ceil() {
+                return Self(position.ceil, size.ceil);
+            }
+
+            Self applyRounding(Rounding type) {
+                final switch (type) {
+                    case Rounding.none: return this;
+                    case Rounding.floor: return floor();
+                    case Rounding.round: return round();
+                    case Rounding.ceil: return ceil();
+                }
+            }
+        }
+    }
+
+    GVec2!P origin(Hook hook) {
+        static if (__traits(isFloating, P)) {
+            final switch (hook) {
+                case Hook.topLeft: return GVec2!P();
+                case Hook.top: return size * GVec2!P(0.5f, 0.0f);
+                case Hook.topRight: return size * GVec2!P(1.0f, 0.0f);
+                case Hook.left: return size * GVec2!P(0.0f, 0.5f);
+                case Hook.center: return size * GVec2!P(0.5f, 0.5f);
+                case Hook.right: return size * GVec2!P(1.0f, 0.5f);
+                case Hook.bottomLeft: return size * GVec2!P(0.0f, 1.0f);
+                case Hook.bottom: return size * GVec2!P(0.5f, 1.0f);
+                case Hook.bottomRight: return size;
+            }
+        } else {
+            auto temp = GRect!Float(cast(Float) position.x, cast(Float) position.y, cast(Float) size.x, cast(Float) size.y).origin(hook);
+            return GVec2!P(cast(P) temp.x, cast(P) temp.y);
+        }
+    }
+
+    GVec2!P point(Hook hook) {
+        return position + origin(hook);
+    }
+
+    GVec2!P topLeftPoint() {
+        return point(Hook.topLeft);
+    }
+
+    GVec2!P topPoint() {
+        return point(Hook.top);
+    }
+
+    GVec2!P topRightPoint() {
+        return point(Hook.topRight);
+    }
+
+    GVec2!P leftPoint() {
+        return point(Hook.left);
+    }
+
+    GVec2!P centerPoint() {
+        return point(Hook.center);
+    }
+
+    GVec2!P rightPoint() {
+        return point(Hook.right);
+    }
+
+    GVec2!P bottomLeftPoint() {
+        return point(Hook.bottomLeft);
+    }
+
+    GVec2!P bottomPoint() {
+        return point(Hook.bottom);
+    }
+
+    GVec2!P bottomRightPoint() {
+        return point(Hook.bottomRight);
+    }
+
+    Self area(Hook hook) {
+        return Self(position - origin(hook), size,);
+    }
+
+    Self centerArea() {
+        return area(Hook.center);
+    }
+
+    void fix() {
+        if (size.x < 0) {
+            position.x = cast(P) (position.x + size.x);
+            size.x = cast(S) (-size.x);
+        }
+        if (size.y < 0) {
+            position.y = cast(P) (position.y + size.y);
+            size.y = cast(S) (-size.y);
+        }
+    }
+
+    bool hasPoint(GVec2!P point) {
+        return (
+            point.x >= position.x &&
+            point.x < position.x + size.x &&
+            point.y >= position.y &&
+            point.y < position.y + size.y
+        );
+    }
+
+    bool hasIntersection(Self area) {
+        return (
+            position.x + size.x > area.position.x &&
+            position.x < area.position.x + area.size.x &&
+            position.y + size.y > area.position.y &&
+            position.y < area.position.y + area.size.y
+        );
+    }
+
+    Self intersection(Self area) {
+        auto maxX = max(position.x, area.position.x);
+        auto maxY = max(position.y, area.position.y);
+        return Self(
+            maxX,
+            maxY,
+            cast(S) max(0, min(position.x + size.x, area.position.x + area.size.x) - maxX),
+            cast(S) max(0, min(position.y + size.y, area.position.y + area.size.y) - maxY),
+        );
+    }
+
+    Self merger(Self area) {
+        auto minX = min(position.x, area.position.x);
+        auto minY = min(position.y, area.position.y);
+        return Self(
+            minX,
+            minY,
+            cast(S) (max(position.x + size.x, area.position.x + area.size.x) - minX),
+            cast(S) (max(position.y + size.y, area.position.y + area.size.y) - minY),
+        );
+    }
+
+    P sliceX(P areaCount, P spacing = 0) {
+        if (areaCount <= 1) return cast(P) size.x;
+        return cast(P) ((size.x - (spacing * (areaCount - 1))) / areaCount);
+    }
+
+    P sliceY(P areaCount, P spacing = 0) {
+        if (areaCount <= 1) return cast(P) size.y;
+        return cast(P) ((size.y - (spacing * (areaCount - 1))) / areaCount);
+    }
+
+    Self addLeft(P amount) {
+        position.x -= amount;
+        size.x += amount;
+        return Self(position.x, position.y, cast(S) amount, size.y);
+    }
+
+    Self addRight(P amount) {
+        auto w = size.x;
+        size.x += amount;
+        return Self(w, position.y, cast(S) amount, size.y);
+    }
+
+    Self addTop(P amount) {
+        position.y -= amount;
+        size.y += amount;
+        return Self(position.x, position.y, size.x, cast(S) amount);
+    }
+
+    Self addBottom(P amount) {
+        auto h = size.y;
+        size.y += amount;
+        return Self(position.x, h, size.x, cast(S) amount);
+    }
+
+    Self subLeft(P amount, P spacing = 0) {
+        auto x = position.x;
+        auto move = cast(P) (amount + spacing);
+        position.x = cast(P) min(position.x + move, position.x + size.x);
+        if (position.x < x) position.x = x + move; // Overflow fix.
+        size.x = cast(S) max(size.x - move, 0);
+        return Self(x, position.y, cast(S) amount, size.y);
+    }
+
+    Self subRight(P amount, P spacing = 0) {
+        auto move = cast(P) (amount + spacing);
+        size.x = cast(S) max(size.x - move, 0);
+        return Self(cast(P) (position.x + size.x + (size.x ? spacing : 0)), position.y, cast(S) amount, size.y);
+    }
+
+    Self subTop(P amount, P spacing = 0) {
+        auto y = position.y;
+        auto move = cast(P) (amount + spacing);
+        position.y = cast(P) min(position.y + move, position.y + size.y);
+        if (position.y < y) position.y = y + move; // Overflow fix.
+        size.y = cast(S) max(size.y - move, 0);
+        return Self(position.x, y, size.x, cast(S) amount);
+    }
+
+    Self subBottom(P amount, P spacing = 0) {
+        auto move = cast(P) (amount + spacing);
+        size.y = cast(S) max(size.y - move, 0);
+        return Self(position.x, cast(P) (position.y + size.y + (size.y ? spacing : 0)), size.x, cast(S) amount);
+    }
+
+    Self addLeftRight(P amount) {
+        this.addLeft(amount);
+        this.addRight(amount);
+        return this;
+    }
+
+    Self addTopBottom(P amount) {
+        this.addTop(amount);
+        this.addBottom(amount);
+        return this;
+    }
+
+    Self addAll(P amount) {
+        this.addLeftRight(amount);
+        this.addTopBottom(amount);
+        return this;
+    }
+
+    Self subLeftRight(P amount) {
+        this.subLeft(amount);
+        this.subRight(amount);
+        return this;
+    }
+
+    Self subTopBottom(P amount) {
+        this.subTop(amount);
+        this.subBottom(amount);
+        return this;
+    }
+
+    Self subAll(P amount) {
+        this.subLeftRight(amount);
+        this.subTopBottom(amount);
+        return this;
+    }
+}
+
+/// A generic 2D Circle.
+struct GCirc(T) {
+    GVec2!T position; /// The position of the circle.
+    T radius = 0;     /// The radius of the circle.
+
+    static if (T.sizeof > float.sizeof) {
+        enum is64 = true;
+        alias Float = double;
+    } else {
+        enum is64 = false;
+        alias Float = float;
+    }
+
+    @safe nothrow @nogc:
+
+    @trusted
+    IStr toStr() {
+        IStr[3] fmtStrs = ["P({}", " {})", " R({})"];
+        static if (__traits(isFloating, T)) {
+            return fmtFloatingGroup(fmtStrs, position.x, position.y, radius);
+        } else {
+            return fmtSignedGroup(fmtStrs, position.x, position.y, radius);
+        }
+    }
+
+    alias toString = toStr;
+
+    pragma(inline, true) {
+        this(GVec2!T position, T radius) {
+            this.position = position;
+            this.radius = radius;
+        }
+
+        this(T x, T y, T radius) {
+            this(GVec2!T(x, y), radius);
+        }
+
+        this(T radius) {
+            this(GVec2!T(), radius);
+        }
+
+        /// The X position of the circle.
+        @trusted
+        ref T x() {
+            return position.x;
+        }
+
+        /// The Y position of the circle.
+        @trusted
+        ref T y() {
+            return position.y;
+        }
+
+        /// The radius of the circle.
+        @trusted
+        ref T r() {
+            return radius;
+        }
+
+        bool hasSize() {
+            return radius != 0;
+        }
+
+        GCirc!T abs() {
+            return GCirc!T(position.abs, radius.abs);
+        }
+
+        static if (__traits(isFloating, T)) {
+            GCirc!T floor() {
+                return GCirc!T(position.floor, radius);
+            }
+
+            GCirc!T round() {
+                return GCirc!T(position.round, radius);
+            }
+
+            GCirc!T ceil() {
+                return GCirc!T(position.ceil, radius);
+            }
+
+            GCirc!T applyRounding(Rounding type) {
+                final switch (type) {
+                    case Rounding.none: return this;
+                    case Rounding.floor: return floor();
+                    case Rounding.round: return round();
+                    case Rounding.ceil: return ceil();
+                }
+            }
+        }
+    }
+}
+
+/// A generic 2D Line.
+struct GLine(T) {
+    GVec2!T a; /// The start point of the line.
+    GVec2!T b; /// The end point of the line.
+
+    @safe nothrow @nogc:
+
+    @trusted
+    IStr toStr() {
+        IStr[4] fmtStrs = ["A({}", " {})", " B({}", " {})"];
+        static if (__traits(isFloating, T)) {
+            return fmtFloatingGroup(fmtStrs, a.x, a.y, b.x, b.y);
+        } else {
+            return fmtSignedGroup(fmtStrs, a.x, a.y, b.x, b.y);
+        }
+    }
+
+    alias toString = toStr;
+
+    pragma(inline, true) {
+        this(GVec2!T a, GVec2!T b) {
+            this.a = a;
+            this.b = b;
+        }
+
+        this(T ax, T ay, T bx, T by) {
+            this(GVec2!T(ax, ay), GVec2!T(bx, by));
+        }
+
+        this(GVec2!T a, T bx, T by) {
+            this(a, GVec2!T(bx, by));
+        }
+
+        this(T ax, T ay, GVec2!T b) {
+            this(GVec2!T(ax, ay), b);
+        }
+
+        @trusted
+        ref T x1() {
+            return a.x;
+        }
+
+        @trusted
+        ref T y1() {
+            return a.y;
+        }
+
+        @trusted
+        ref T x2() {
+            return b.x;
+        }
+
+        @trusted
+        ref T y2() {
+            return b.y;
+        }
+
+        GLine!T abs() {
+            return GLine!T(a.abs, b.abs);
+        }
+
+        static if (__traits(isFloating, T)) {
+            GLine!T floor() {
+                return GLine!T(a.floor, b.floor);
+            }
+
+            GLine!T round() {
+                return GLine!T(a.round, b.round);
+            }
+
+            GLine!T ceil() {
+                return GLine!T(a.ceil, b.ceil);
+            }
+
+            GLine!T applyRounding(Rounding type) {
+                final switch (type) {
+                    case Rounding.none: return this;
+                    case Rounding.floor: return floor();
+                    case Rounding.round: return round();
+                    case Rounding.ceil: return ceil();
+                }
+            }
+        }
+    }
+}
+
+/// Handles the transition between two values over a specified duration.
+struct GTween(T) {
+    T a;                   /// Start value.
+    T b;                   /// End value.
+    float time = 0.0f;     /// Current time in seconds.
+    float duration = 0.0f; /// Duration of the tween in seconds.
+    TweenMode mode;        /// How the tween behaves when reaching its limits.
+    Easing type;           /// Easing function used for interpolation.
+    bool isYoyoing;        /// True if the tween is currently reversing direction (for yoyo mode).
+
+    @safe nothrow @nogc:
+
+    /// Creates a new tween.
+    this(T a, T b, float duration, TweenMode mode = TweenMode.bomb, Easing type = Easing.linear) {
+        this.a = a;
+        this.b = b;
+        this.duration = duration;
+        this.mode = mode;
+        this.type = type;
+    }
+
+    /// Returns true if time is at the start (0.0).
+    /// Useful when using `TweenMode.bomb`.
+    bool isAtStart() {
+        return time == 0.0f;
+    }
+
+    /// Returns true if time is at the end (duration).
+    /// Useful when using `TweenMode.bomb`.
+    bool isAtEnd() {
+        return time >= duration;
+    }
+
+    /// Returns the current interpolated value between `a` and `b`.
+    T now() {
+        if (time <= 0.0f) {
+            return a;
+        } else if (time >= duration) {
+            return b;
+        } else {
+            return a.lerp(b, easing(type)(progress));
+        }
+    }
+
+    /// Advances the tween by the given delta time and returns the current value.
+    T update(float delta) {
+        setTime(time + (isYoyoing ? -delta : delta));
+        return now;
+    }
+
+    /// Resets the tween to the start and returns the current value.
+    T reset() {
+        setTime(0.0f);
+        return now;
+    }
+
+    /// Returns the current progress (between 0.0 to 1.0).
+    float progress() {
+        return duration == 0.0f ? 0.0f : time / duration;
+    }
+
+    /// Sets the progress to a specific value (between 0.0 to 1.0).
+    void setProgress(float value) {
+        time = duration * clamp(value, 0.0f, 1.0f);
+    }
+
+    /// Sets the current time and applies the tween mode rules.
+    void setTime(float value) {
+        final switch (mode) {
+            case TweenMode.bomb:
+                time = clamp(value, 0.0f, duration);
+                break;
+            case TweenMode.loop:
+                time = wrap(value, 0.0f, duration);
+                break;
+            case TweenMode.yoyo:
+                time = clamp(value, 0.0f, duration);
+                if (value < 0.0f) {
+                    isYoyoing = false;
+                } else if (value > duration) {
+                    isYoyoing = true;
+                }
+                break;
+        }
+    }
+}
+
+/// Handles the transition between two boolean states.
+struct SmoothToggle {
+    float progress = 0.0f; /// Current progress, between 0.0 and 1.0 (inclusive).
+    bool state;            /// Current target state.
+
+    @safe nothrow @nogc:
+
+    /// Creates a new toggle.
+    this(bool state) {
+        this.state = state;
+        this.progress = state ? 1.0f : 0.0f;
+    }
+
+    /// Returns true if progress is at the start (0.0).
+    bool isAtStart() {
+        return progress == 0.0f;
+    }
+
+    /// Returns true if progress is at the end (1.0).
+    bool isAtEnd() {
+        return progress == 1.0f;
+    }
+
+    /// Returns true if progress is not at the start (0.0) or the end (1.0).
+    bool isActive() {
+        return progress != 0.0f && progress != 1.0f;
+    }
+
+    /// Returns the current progress (between 0.0 and 1.0).
+    float now() {
+        if (progress <= 0.0f) {
+            return 0.0f;
+        } else if (progress >= 1.0f) {
+            return 1.0f;
+        } else {
+            return progress;
+        }
+    }
+
+    /// Advances the progress toward the current state.
+    /// Returns the updated progress.
+    float update(float delta) {
+        return progress.followState(state, delta);
+    }
+
+    /// Resets the progress to 0.0.
+    /// Returns the updated progress.
+    float reset() {
+        setProgress(0.0f);
+        return now;
+    }
+
+    /// Sets the progress to the given value (clamped).
+    void setProgress(float value) {
+        progress = clamp(value, 0.0f, 1.0f);
+    }
+
+    /// Toggles the target state.
+    /// Returns the new state.
+    bool toggle() {
+        state = !state;
+        return state;
+    }
+
+    /// Toggles the state and instantly sets progress to match.
+    /// Returns the new state.
+    bool toggleSnap() {
+        state = !state;
+        progress = state ? 1.0f : 0.0f;
+        return state;
+    }
+}
+
+pragma(inline, true) @trusted {
+    /// Returns `x` wrapped to the range [`a`, `b`], wrapping around when out of bounds.
+    T wrap(T)(T x, T a, T b) {
+        T result = void;
+        auto range = cast(T) (b - a);
+        static if (__traits(isUnsigned, T)) {
+            result = cast(T) wrap!long(x, a, b);
+        } else static if (__traits(isFloating, T)) {
+            result = fmod64(x - a, range);
+            if (result < 0) result += range;
+            result += a;
+        } else {
+            result = cast(T) ((x - a) % range);
+            if (result < 0) result += range;
+            result += a;
+        }
+        return result;
+    }
+
+    // TODO: Look at this again because I feel it returns weird values sometimes.
+    /// Returns `x` rounded to the nearest multiple of `step`.
+    T snap(T)(T x, T step) {
+        static if (__traits(isFloating, T)) {
+            return (x / step).round() * step;
+        } else {
+            return cast(T) snap!double(cast(double) x, cast(double) step).round();
+        }
+    }
+
+    /// Returns the floating-point remainder of `x / y`.
+    float fmod(float x, float y) {
+        return stdc_fmodf(x, y);
+    }
+
+    /// Returns the floating-point remainder of `x / y`.
+    double fmod64(double x, double y) {
+        return stdc_fmod(x, y);
+    }
+
+    /// Returns the IEEE 754 floating-point remainder of `x / y`.
+    float remainder(float x, float y) {
+        return stdc_remainderf(x, y);
+    }
+
+    /// Returns the IEEE 754 floating-point remainder of `x / y`.
+    double remainder64(double x, double y) {
+        return stdc_remainder(x, y);
+    }
+
+    /// Returns Euler's number `e` raised to the power of `x`.
+    float exp(float x) {
+        return stdc_expf(x);
+    }
+
+    /// Returns Euler's number `e` raised to the power of `x`.
+    double exp64(double x) {
+        return stdc_exp(x);
+    }
+
+    /// Returns `2` raised to the power of `x`.
+    float exp2(float x) {
+        return stdc_exp2f(x);
+    }
+
+    /// Returns `2` raised to the power of `x`.
+    double exp264(double x) {
+        return stdc_exp2(x);
+    }
+
+    /// Returns the natural logarithm of `x`.
+    float log(float x) {
+        return stdc_logf(x);
+    }
+
+    /// Returns the natural logarithm of `x`.
+    double log64(double x) {
+        return stdc_log(x);
+    }
+
+    /// Returns the base-10 logarithm of `x`.
+    float log10(float x) {
+        return stdc_log10f(x);
+    }
+
+    /// Returns the base-10 logarithm of `x`.
+    double log1064(double x) {
+        return stdc_log10(x);
+    }
+
+    /// Returns the base-2 logarithm of `x`.
+    float log2(float x) {
+        return stdc_log2f(x);
+    }
+
+    /// Returns the base-2 logarithm of `x`.
+    double log264(double x) {
+        return stdc_log2(x);
+    }
+
+    /// Returns `base` raised to the power of `exponent`.
+    float pow(float base, float exponent) {
+        return stdc_powf(base, exponent);
+    }
+
+    /// Returns `base` raised to the power of `exponent`.
+    double pow64(double base, double exponent) {
+        return stdc_pow(base, exponent);
+    }
+
+    /// Returns the angle between the positive x-axis and the point (`x`, `y`).
+    float atan2(float y, float x) {
+        return stdc_atan2f(y, x);
+    }
+
+    /// Returns the angle between the positive x-axis and the point (`x`, `y`).
+    double atan264(double y, double x) {
+        return stdc_atan2(y, x);
+    }
+
+    /// Returns `x` unchanged.
+    float roundNothing(float x) {
+        return x;
+    }
+
+    /// Returns `x` unchanged.
+    double roundNothing64(double x) {
+        return x;
+    }
+
+    /// Returns the floor of `x`.
+    float floor(float x) {
+        return stdc_floorf(x);
+    }
+
+    /// Returns the floor of `x`.
+    double floor64(double  x) {
+        return stdc_floor(x);
+    }
+
+    /// Returns the nearest integer to `x`.
+    float round(float x) {
+        return stdc_roundf(x);
+    }
+
+    /// Returns the nearest integer to `x`.
+    double round64(double x) {
+        return stdc_round(x);
+    }
+
+    /// Returns the ceiling of `x`.
+    float ceil(float x) {
+        return stdc_ceilf(x);
+    }
+
+    /// Returns the ceiling of `x`.
+    double ceil64(double x) {
+        return stdc_ceil(x);
+    }
+
+    /// Applies the specified `type` of rounding to `x`.
+    float applyRounding(float x, Rounding type) {
+        return rounding(type)(x);
+    }
+
+    /// Applies the specified `type` of rounding to `x`.
+    double applyRounding64(double x, Rounding type) {
+        return rounding64(type)(x);
+    }
+
+    /// Returns the square root of `x`.
+    float sqrt(float x) {
+        return stdc_sqrtf(x);
+    }
+
+    /// Returns the square root of `x`.
+    double sqrt64(double x) {
+        return stdc_sqrt(x);
+    }
+
+    /// Returns the sine of `x`.
+    float sin(float x) {
+        return stdc_sinf(x);
+    }
+
+    /// Returns the sine of `x`.
+    double sin64(double x) {
+        return stdc_sin(x);
+    }
+
+    /// Returns the cosine of `x`.
+    float cos(float x) {
+        return stdc_cosf(x);
+    }
+
+    /// Returns the cosine of `x`.
+    double cos64(double x) {
+        return stdc_cos(x);
+    }
+
+    /// Returns the tangent of `x`.
+    float tan(float x) {
+        return stdc_tanf(x);
+    }
+
+    /// Returns the tangent of `x`.
+    double tan64(double x) {
+        return stdc_tan(x);
+    }
+
+    /// Returns the arcsine of `x`.
+    float asin(float x) {
+        return stdc_asinf(x);
+    }
+
+    /// Returns the arcsine of `x`.
+    double asin64(double x) {
+        return stdc_asin(x);
+    }
+
+    /// Returns the arccosine of `x`.
+    float acos(float x) {
+        return stdc_acosf(x);
+    }
+
+    /// Returns the arccosine of `x`.
+    double acos64(double x) {
+        return stdc_acos(x);
+    }
+
+    /// Returns the arctangent of `x`.
+    float atan(float x) {
+        return stdc_atanf(x);
+    }
+
+    /// Returns the arctangent of `x`.
+    double atan64(double x) {
+        return stdc_atan(x);
+    }
+
+    /// Returns the linear interpolation between `from` and `to` by `weight`.
+    /// A weight of 0 returns `from`, a weight of 1 returns `to`.
+    float lerp(float from, float to, float weight) {
+        return from + (to - from) * weight;
+    }
+
+    /// Returns the linear interpolation between `from` and `to` by `weight`.
+    /// A weight of 0 returns `from`, a weight of 1 returns `to`.
+    double lerp64(double from, double to, double weight) {
+        return from + (to - from) * weight;
+    }
+
+    /// Returns the smooth interpolation between `from` and `to` by `weight` using a cubic curve.
+    /// Eases in and out, with zero first-order derivatives at both endpoints.
+    float smoothstep(float from, float to, float weight) {
+        auto v = weight * weight * (3.0f - 2.0f * weight);
+        return (to * v) + (from * (1.0f - v));
+    }
+
+    /// Returns the smooth interpolation between `from` and `to` by `weight` using a cubic curve.
+    /// Eases in and out, with zero first-order derivatives at both endpoints.
+    double smoothstep64(double from, double to, double weight) {
+        auto v = weight * weight * (3.0 - 2.0 * weight);
+        return (to * v) + (from * (1.0 - v));
+    }
+
+    /// Returns the smoother interpolation between `from` and `to` by `weight` using a quintic curve.
+    /// Eases in and out, with zero first and second-order derivatives at both endpoints.
+    float smootherstep(float from, float to, float weight) {
+        auto v = weight * weight * weight * (weight * (weight * 6.0f - 15.0f) + 10.0f);
+        return (to * v) + (from * (1.0f - v));
+    }
+
+    /// Returns the smoother interpolation between `from` and `to` by `weight` using a quintic curve.
+    /// Eases in and out, with zero first and second-order derivatives at both endpoints.
+    double smootherstep64(double from, double to, double weight) {
+        auto v = weight * weight * weight * (weight * (weight * 6.0 - 15.0) + 10.0);
+        return (to * v) + (from * (1.0 - v));
+    }
+
+    /// Easing function with no acceleration. Returns `x` unchanged.
+    float easeLinear(float x) {
+        return x;
+    }
+
+    /// Easing function that starts slow and accelerates using a sine curve.
+    float easeInSine(float x) {
+        return 1.0f - cos((x * pi) / 2.0f);
+    }
+
+    /// Easing function that starts fast and decelerates using a sine curve.
+    float easeOutSine(float x) {
+        return sin((x * pi) / 2.0f);
+    }
+
+    /// Easing function that accelerates then decelerates using a sine curve.
+    float easeInOutSine(float x) {
+        return -(cos(pi * x) - 1.0f) / 2.0f;
+    }
+
+    /// Easing function that starts slow and accelerates using a cubic curve.
+    float easeInCubic(float x) {
+        return x * x * x;
+    }
+
+    /// Easing function that starts fast and decelerates using a cubic curve.
+    float easeOutCubic(float x) {
+        return 1.0f - pow(1.0f - x, 3.0f);
+    }
+
+    /// Easing function that accelerates then decelerates using a cubic curve.
+    float easeInOutCubic(float x) {
+        return x < 0.5f ? 4.0f * x * x * x : 1.0f - pow(-2.0f * x + 2.0f, 3.0f) / 2.0f;
+    }
+
+    /// Easing function that starts slow and accelerates using a quintic curve.
+    float easeInQuint(float x) {
+        return x * x * x * x * x;
+    }
+
+    /// Easing function that starts fast and decelerates using a quintic curve.
+    float easeOutQuint(float x) {
+        return 1.0f - pow(1.0f - x, 5.0f);
+    }
+
+    /// Easing function that accelerates then decelerates using a quintic curve.
+    float easeInOutQuint(float x) {
+        return x < 0.5f ? 16.0f * x * x * x * x * x : 1.0f - pow(-2.0f * x + 2.0f, 5.0f) / 2.0f;
+    }
+
+    /// Easing function that starts slow and accelerates along a circular arc.
+    float easeInCirc(float x) {
+        return 1.0f - sqrt(1.0f - pow(x, 2.0f));
+    }
+
+    /// Easing function that starts fast and decelerates along a circular arc.
+    float easeOutCirc(float x) {
+        return sqrt(1.0f - pow(x - 1.0f, 2.0f));
+    }
+
+    /// Easing function that accelerates then decelerates along a circular arc.
+    float easeInOutCirc(float x) {
+        return x < 0.5f
+            ? (1.0f - sqrt(1.0f - pow(2.0f * x, 2.0f))) / 2.0f
+            : (sqrt(1.0f - pow(-2.0f * x + 2.0f, 2.0f)) + 1.0f) / 2.0f;
+    }
+
+    /// Easing function that overshoots the start with an elastic spring effect.
+    float easeInElastic(float x) {
+        enum c4 = (2.0f * pi) / 3.0f;
+        return x == 0.0f
+            ? 0.0f
+            : x == 1.0f
+            ? 1.0f
+            : -pow(2.0f, 10.0f * x - 10.0f) * sin((x * 10.0f - 10.75f) * c4);
+    }
+
+    /// Easing function that overshoots the end with an elastic spring effect.
+    float easeOutElastic(float x) {
+        enum c4 = (2.0f * pi) / 3.0f;
+        return x == 0.0f
+            ? 0.0f
+            : x == 1.0f
+            ? 1.0f
+            : pow(2.0f, -10.0f * x) * sin((x * 10.0f - 0.75f) * c4) + 1.0f;
+    }
+
+    /// Easing function that overshoots both ends with an elastic spring effect.
+    float easeInOutElastic(float x) {
+        enum c5 = (2.0f * pi) / 4.5f;
+        return x == 0.0f
+            ? 0.0f
+            : x == 1.0f
+            ? 1.0f
+            : x < 0.5f
+            ? -(pow(2.0f, 20.0f * x - 10.0f) * sin((20.0f * x - 11.125f) * c5)) / 2.0f
+            : (pow(2.0f, -20.0f * x + 10.0f) * sin((20.0f * x - 11.125f) * c5)) / 2.0f + 1.0f;
+    }
+
+    /// Easing function that starts slow and accelerates using a quadratic curve.
+    float easeInQuad(float x) {
+        return x * x;
+    }
+
+    /// Easing function that starts fast and decelerates using a quadratic curve.
+    float easeOutQuad(float x) {
+        return 1.0f - (1.0f - x) * (1.0f - x);
+    }
+
+    /// Easing function that accelerates then decelerates using a quadratic curve.
+    float easeInOutQuad(float x) {
+        return x < 0.5f ? 2.0f * x * x : 1.0f - pow(-2.0f * x + 2.0f, 2.0f) / 2.0f;
+    }
+
+    /// Easing function that starts slow and accelerates using a quartic curve.
+    float easeInQuart(float x) {
+        return x * x * x * x;
+    }
+
+    /// Easing function that starts fast and decelerates using a quartic curve.
+    float easeOutQuart(float x) {
+        return 1.0f - pow(1.0f - x, 4.0f);
+    }
+
+    /// Easing function that accelerates then decelerates using a quartic curve.
+    float easeInOutQuart(float x) {
+        return x < 0.5f ? 8.0f * x * x * x * x : 1.0f - pow(-2.0f * x + 2.0f, 4.0f) / 2.0f;
+    }
+
+    /// Easing function that starts slow and accelerates exponentially.
+    float easeInExpo(float x) {
+        return x == 0.0f ? 0.0f : pow(2.0f, 10.0f * x - 10.0f);
+    }
+
+    /// Easing function that starts fast and decelerates exponentially.
+    float easeOutExpo(float x) {
+        return x == 1.0f ? 1.0f : 1.0f - pow(2.0f, -10.0f * x);
+    }
+
+    /// Easing function that accelerates then decelerates exponentially.
+    float easeInOutExpo(float x) {
+        return x == 0.0f
+            ? 0.0f
+            : x == 1.0f
+            ? 1.0f
+            : x < 0.5f ? pow(2.0f, 20.0f * x - 10.0f) / 2.0f
+            : (2.0f - pow(2.0f, -20.0f * x + 10.0f)) / 2.0f;
+    }
+
+    /// Easing function that pulls back slightly before accelerating forward.
+    float easeInBack(float x) {
+        enum c1 = 1.70158f;
+        enum c3 = c1 + 1.0f;
+        return c3 * x * x * x - c1 * x * x;
+    }
+
+    /// Easing function that overshoots the target before settling.
+    float easeOutBack(float x) {
+        enum c1 = 1.70158f;
+        enum c3 = c1 + 1.0f;
+        return 1.0f + c3 * pow(x - 1.0f, 3.0f) + c1 * pow(x - 1.0f, 2.0f);
+    }
+
+    /// Easing function that pulls back at the start and overshoots at the end.
+    float easeInOutBack(float x) {
+        enum c1 = 1.70158f;
+        enum c2 = c1 * 1.525f;
+        return x < 0.5f
+            ? (pow(2.0f * x, 2.0f) * ((c2 + 1.0f) * 2.0f * x - c2)) / 2.0f
+            : (pow(2.0f * x - 2.0f, 2.0f) * ((c2 + 1.0f) * (x * 2.0f - 2.0f) + c2) + 2.0f) / 2.0f;
+    }
+
+    /// Easing function that starts with a bouncing effect before reaching the target.
+    float easeInBounce(float x) {
+        return 1.0f - easeOutBounce(1.0f - x);
+    }
+
+    /// Easing function that ends with a bouncing effect after reaching the target.
+    float easeOutBounce(float x) {
+        enum n1 = 7.5625f;
+        enum d1 = 2.75f;
+        return (x < 1.0f / d1)
+            ? n1 * x * x
+            : (x < 2.0f / d1)
+            ? n1 * (x -= 1.5f / d1) * x + 0.75f
+            : (x < 2.5f / d1)
+            ? n1 * (x -= 2.25f / d1) * x + 0.9375f
+            : n1 * (x -= 2.625f / d1) * x + 0.984375f;
+    }
+
+    /// Easing function that bounces at both the start and end.
+    float easeInOutBounce(float x) {
+        return x < 0.5f
+            ? (1.0f - easeOutBounce(1.0f - 2.0f * x)) / 2.0f
+            : (1.0f + easeOutBounce(2.0f * x - 1.0f)) / 2.0f;
+    }
+
+    /// Returns true if `a` and `b` are within `localEpsilon` of each other.
+    bool fequals(float a, float b, float localEpsilon = epsilon) {
+        return abs(a - b) < localEpsilon;
+    }
+
+    /// Returns true if `a` and `b` are within `localEpsilon` of each other.
+    bool fequals64(double a, double b, double localEpsilon = epsilon) {
+        return abs(a - b) < localEpsilon;
+    }
+
+    /// Returns true if all components of `a` and `b` are within `localEpsilon` of each other.
+    bool fequals(Vec2 a, Vec2 b, float localEpsilon = epsilon) {
+        return fequals(a.x, b.x, localEpsilon) && fequals(a.y, b.y, localEpsilon);
+    }
+
+    /// Returns true if all components of `a` and `b` are within `localEpsilon` of each other.
+    bool fequals(Vec3 a, Vec3 b, float localEpsilon = epsilon) {
+        return fequals(a.x, b.x, localEpsilon) && fequals(a.y, b.y, localEpsilon) && fequals(a.z, b.z, localEpsilon);
+    }
+
+    /// Returns true if all components of `a` and `b` are within `localEpsilon` of each other.
+    bool fequals(Vec4 a, Vec4 b, float localEpsilon = epsilon) {
+        return fequals(a.x, b.x, localEpsilon) && fequals(a.y, b.y, localEpsilon) && fequals(a.z, b.z, localEpsilon) && fequals(a.w, b.w, localEpsilon);
+    }
+
+    /// Converts degrees to radians.
+    float toRadians(float degrees) {
+        return degrees * pi180;
+    }
+
+    /// Converts degrees to radians.
+    double toRadians64(double degrees) {
+        return degrees * pi180;
+    }
+
+    /// Converts radians to degrees.
+    float toDegrees(float radians) {
+        return radians * dpi180;
+    }
+
+    /// Converts radians to degrees.
+    double toDegrees64(double radians) {
+        return radians * dpi180;
+    }
+
+    /// Converts a `Vec2` to an `IVec2` by truncating each component to an integer.
+    IVec2 toIVec(Vec2 vec) {
+        return IVec2(cast(int) vec.x, cast(int) vec.y);
+    }
+
+    /// Converts a `Vec3` to an `IVec3` by truncating each component to an integer.
+    IVec3 toIVec(Vec3 vec) {
+        return IVec3(cast(int) vec.x, cast(int) vec.y, cast(int) vec.z);
+    }
+
+    /// Converts a `Vec4` to an `IVec4` by truncating each component to an integer.
+    IVec4 toIVec(Vec4 vec) {
+        return IVec4(cast(int) vec.x, cast(int) vec.y, cast(int) vec.z, cast(int) vec.w);
+    }
+
+    /// Converts an `IVec2` to a `Vec2`.
+    Vec2 toVec(IVec2 vec) {
+        return Vec2(vec.x, vec.y);
+    }
+
+    /// Converts a `GVec2!short` to a `Vec2`.
+    Vec2 toVec(GVec2!short vec) {
+        return Vec2(vec.x, vec.y);
+    }
+
+    /// Converts an `IVec3` to a `Vec3`.
+    Vec3 toVec(IVec3 vec) {
+        return Vec3(vec.x, vec.y, vec.z);
+    }
+
+    /// Converts an `IVec4` to a `Vec4`.
+    Vec4 toVec(IVec4 vec) {
+        return Vec4(vec.x, vec.y, vec.z, vec.w);
+    }
+
+    /// Converts an `Rgba` color to a `Vec4` with components in the order `(r, g, b, a)`.
+    Vec4 toVec(Rgba color) {
+        return Vec4(color.r, color.g, color.b, color.a);
+    }
+
+    /// Converts a `Rect` to an `IRect` by truncating position and size components to integers.
+    IRect toIRect(Rect rect) {
+        return IRect(rect.position.toIVec(), rect.size.toIVec());
+    }
+
+    /// Converts an `IRect` to a `Rect`.
+    Rect toRect(IRect rect) {
+        return Rect(rect.position.toVec(), rect.size.toVec());
+    }
+
+    /// Converts an `SRect` to a `Rect`.
+    Rect toRect(SRect rect) {
+        return Rect(rect.position.toVec(), rect.size.toVec());
+    }
+
+    /// Converts a packed 24-bit RGB integer to an `Rgba` color with full opacity.
+    Rgba toRgb(uint rgb) {
+        return Rgba(
+            (rgb & 0xFF0000) >> 16,
+            (rgb & 0xFF00) >> 8,
+            (rgb & 0xFF),
+        );
+    }
+
+    /// Converts a packed 32-bit RGBA integer to an `Rgba` color.
+    Rgba toRgba(uint rgba) {
+        return Rgba(
+            (rgba & 0xFF000000) >> 24,
+            (rgba & 0xFF0000) >> 16,
+            (rgba & 0xFF00) >> 8,
+            (rgba & 0xFF),
+        );
+    }
+}
+
+@trusted {
+    /// Converts a `Vec3` to an `Rgba` color, clamping each component to the range [0, 255] with full opacity.
+    Rgba toRgba(Vec3 vec) {
+        return Rgba(
+            cast(ubyte) clamp(vec.x, 0.0f, 255.0f),
+            cast(ubyte) clamp(vec.y, 0.0f, 255.0f),
+            cast(ubyte) clamp(vec.z, 0.0f, 255.0f),
+            255,
+        );
+    }
+
+    /// Converts a `Vec4` to an `Rgba` color, clamping each component to the range [0, 255].
+    Rgba toRgba(Vec4 vec) {
+        return Rgba(
+            cast(ubyte) clamp(vec.x, 0.0f, 255.0f),
+            cast(ubyte) clamp(vec.y, 0.0f, 255.0f),
+            cast(ubyte) clamp(vec.z, 0.0f, 255.0f),
+            cast(ubyte) clamp(vec.w, 0.0f, 255.0f),
+        );
+    }
+
+    /// Converts a hex color string (e.g. `"#RGB"`, `"RRGGBB"`, `"RRGGBBAA"`) to an `Rgba` color.
+    /// Returns `blank` if the string is invalid.
+    Rgba toRgba(IStr str) {
+        auto startsWithSymbol = str.length == 0 ? false : str[0] == '#';
+        auto isRgb = str.length == 6 + startsWithSymbol;
+        auto isRgba = str.length == 8 + startsWithSymbol;
+        if (!isRgb && !isRgba) return blank;
+        uint hex = 0;
+        foreach (c; str[startsWithSymbol .. $]) {
+            uint digit = 0;
+            if (c >= '0' && c <= '9') {
+                digit = cast(uint) (c - '0');
+            } else if (c >= 'a' && c <= 'f') {
+                digit = cast(uint) (10 + (c - 'a'));
+            } else if (c >= 'A' && c <= 'F') {
+                digit = cast(uint) (10 + (c - 'A'));
+            } else {
+                return blank;
+            }
+            hex = (hex << 4) | digit;
+        }
+        if (isRgb) return hex.toRgb();
+        return hex.toRgba();
+    }
+
+    /// Returns the linear interpolation between `from` and `to` by `weight`, applied per component.
+    Vec2 lerp(Vec2 from, Vec2 to, float weight) {
+        return Vec2(
+            lerp(from.x, to.x, weight),
+            lerp(from.y, to.y, weight),
+        );
+    }
+
+    /// Returns the linear interpolation between `from` and `to` by `weight`, applied per component.
+    Vec3 lerp(Vec3 from, Vec3 to, float weight) {
+        return Vec3(
+            lerp(from.x, to.x, weight),
+            lerp(from.y, to.y, weight),
+            lerp(from.z, to.z, weight),
+        );
+    }
+
+    /// Returns the linear interpolation between `from` and `to` by `weight`, applied per component.
+    Vec4 lerp(Vec4 from, Vec4 to, float weight) {
+        return Vec4(
+            lerp(from.x, to.x, weight),
+            lerp(from.y, to.y, weight),
+            lerp(from.z, to.z, weight),
+            lerp(from.w, to.w, weight),
+        );
+    }
+
+    /// Returns the rounding function corresponding to the given `Rounding` type.
+    RoundingFunc rounding(Rounding type) {
+        final switch (type) {
+            case Rounding.none: return &roundNothing;
+            case Rounding.floor: return &floor;
+            case Rounding.round: return &round;
+            case Rounding.ceil: return &ceil;
+        }
+    }
+
+    /// Returns the 64-bit rounding function corresponding to the given `Rounding` type.
+    Rounding64Func rounding64(Rounding type) {
+        final switch (type) {
+            case Rounding.none: return &roundNothing64;
+            case Rounding.floor: return &floor64;
+            case Rounding.round: return &round64;
+            case Rounding.ceil: return &ceil64;
+        }
+    }
+
+    /// Returns the easing function corresponding to the given `Easing` type.
+    EasingFunc easing(Easing type) {
+        final switch (type) {
+            case Easing.linear: return &easeLinear;
+            case Easing.inSine: return &easeInSine;
+            case Easing.outSine: return &easeOutSine;
+            case Easing.inOutSine: return &easeInOutSine;
+            case Easing.inCubic: return &easeInCubic;
+            case Easing.outCubic: return &easeOutCubic;
+            case Easing.inOutCubic: return &easeInOutCubic;
+            case Easing.inQuint: return &easeInQuint;
+            case Easing.outQuint: return &easeOutQuint;
+            case Easing.inOutQuint: return &easeInOutQuint;
+            case Easing.inCirc: return &easeInCirc;
+            case Easing.outCirc: return &easeOutCirc;
+            case Easing.inOutCirc: return &easeInOutCirc;
+            case Easing.inElastic: return &easeInElastic;
+            case Easing.outElastic: return &easeOutElastic;
+            case Easing.inOutElastic: return &easeInOutElastic;
+            case Easing.inQuad: return &easeInQuad;
+            case Easing.outQuad: return &easeOutQuad;
+            case Easing.inOutQuad: return &easeInOutQuad;
+            case Easing.inQuart: return &easeInQuart;
+            case Easing.outQuart: return &easeOutQuart;
+            case Easing.inOutQuart: return &easeInOutQuart;
+            case Easing.inExpo: return &easeInExpo;
+            case Easing.outExpo: return &easeOutExpo;
+            case Easing.inOutExpo: return &easeInOutExpo;
+            case Easing.inBack: return &easeInBack;
+            case Easing.outBack: return &easeOutBack;
+            case Easing.inOutBack: return &easeInOutBack;
+            case Easing.inBounce: return &easeInBounce;
+            case Easing.outBounce: return &easeOutBounce;
+            case Easing.inOutBounce: return &easeInOutBounce;
+        }
+    }
+
+    /// Moves `from` toward 1 by `delta` if `to` is true, or toward 0 if false. Result is clamped to [0, 1].
+    float moveToState(float from, bool to, float delta) {
+        return to ? min(1.0f, from + delta) : max(0.0f, from - delta);
+    }
+
+    /// Moves `from` toward 1 by `delta` if `to` is true, or toward 0 if false. Result is clamped to [0, 1].
+    float moveToState64(double from, bool to, double delta) {
+        return to ? min(1.0, from + delta) : max(0.0, from - delta);
+    }
+
+    /// Moves `weight` by ref toward the `target` state by `speed` and returns the updated value.
+    float followState(ref float weight, bool target, float speed) {
+        weight = weight.moveToState(target, speed);
+        return weight;
+    }
+
+    /// Moves `weight` by ref toward the `target` state by `speed` and returns the updated value.
+    double followState64(ref double weight, bool target, double speed) {
+        weight = weight.moveToState64(target, speed);
+        return weight;
+    }
+
+    /// Moves `from` toward `to` by at most `delta`, stopping exactly at `to`.
+    float moveTo(float from, float to, float delta) {
+        return (abs(to - from) > abs(delta))
+            ? from + sign(to - from) * delta
+            : to;
+    }
+
+    /// Moves `from` toward `to` by at most `delta`, stopping exactly at `to`.
+    float moveTo64(double from, double to, double delta) {
+        return (abs(to - from) > abs(delta))
+            ? from + sign(to - from) * delta
+            : to;
+    }
+
+    /// Moves `from` toward `to` per component by at most `delta`, stopping exactly at `to`.
+    Vec2 moveTo(Vec2 from, Vec2 to, Vec2 delta) {
+        Vec2 result = void;
+        auto offset = from.directionTo(to) * delta;
+        if (abs(to.x - from.x) > abs(offset.x)) result.x = from.x + offset.x;
+        else result.x = to.x;
+        if (abs(to.y - from.y) > abs(offset.y)) result.y = from.y + offset.y;
+        else result.y = to.y;
+        return result;
+    }
+
+    /// Moves `from` toward `to` per component by at most `delta`, stopping exactly at `to`.
+    Vec3 moveTo(Vec3 from, Vec3 to, Vec3 delta) {
+        Vec3 result = void;
+        auto offset = from.directionTo(to) * delta;
+        if (abs(to.x - from.x) > abs(offset.x)) result.x = from.x + offset.x;
+        else result.x = to.x;
+        if (abs(to.y - from.y) > abs(offset.y)) result.y = from.y + offset.y;
+        else result.y = to.y;
+        if (abs(to.z - from.z) > abs(offset.z)) result.z = from.z + offset.z;
+        else result.z = to.z;
+        return result;
+    }
+
+    /// Moves `from` toward `to` per component by at most `delta`, stopping exactly at `to`.
+    Vec4 moveTo(Vec4 from, Vec4 to, Vec4 delta) {
+        Vec4 result = void;
+        auto offset = from.directionTo(to) * delta;
+        if (abs(to.x - from.x) > abs(offset.x)) result.x = from.x + offset.x;
+        else result.x = to.x;
+        if (abs(to.y - from.y) > abs(offset.y)) result.y = from.y + offset.y;
+        else result.y = to.y;
+        if (abs(to.z - from.z) > abs(offset.z)) result.z = from.z + offset.z;
+        else result.z = to.z;
+        if (abs(to.w - from.w) > abs(offset.w)) result.w = from.w + offset.w;
+        else result.w = to.w;
+        return result;
+    }
+
+    /// Moves `from` toward `to` by `delta` each step, decelerating as it approaches using `slowdown`.
+    /// A `slowdown` value around 0.1 gives a natural deceleration feel.
+    float moveToWithSlowdown(float from, float to, float delta, float slowdown) {
+        if (from.fequals(to)) return to;
+        auto target = ((from * (slowdown - 1.0f)) + to) / slowdown;
+        return from + (target - from) * delta;
+    }
+
+    /// Moves `from` toward `to` by `delta` each step, decelerating as it approaches using `slowdown`.
+    /// A `slowdown` value around 0.1 gives a natural deceleration feel.
+    float moveToWithSlowdown64(double from, double to, double delta, double slowdown) {
+        if (from.fequals64(to)) return to;
+        auto target = ((from * (slowdown - 1.0)) + to) / slowdown;
+        return from + (target - from) * delta;
+    }
+
+    /// Moves `from` toward `to` per component by `delta`, decelerating as it approaches using `slowdown`.
+    /// A `slowdown` value around 0.1 gives a natural deceleration feel.
+    Vec2 moveToWithSlowdown(Vec2 from, Vec2 to, Vec2 delta, float slowdown) {
+        return Vec2(
+            moveToWithSlowdown(from.x, to.x, delta.x, slowdown),
+            moveToWithSlowdown(from.y, to.y, delta.y, slowdown),
+        );
+    }
+
+    /// Moves `from` toward `to` per component by `delta`, decelerating as it approaches using `slowdown`.
+    /// A `slowdown` value around 0.1 gives a natural deceleration feel.
+    Vec3 moveToWithSlowdown(Vec3 from, Vec3 to, Vec3 delta, float slowdown) {
+        return Vec3(
+            moveToWithSlowdown(from.x, to.x, delta.x, slowdown),
+            moveToWithSlowdown(from.y, to.y, delta.y, slowdown),
+            moveToWithSlowdown(from.z, to.z, delta.z, slowdown),
+        );
+    }
+
+    /// Moves `from` toward `to` per component by `delta`, decelerating as it approaches using `slowdown`.
+    /// A `slowdown` value around 0.1 gives a natural deceleration feel.
+    Vec4 moveToWithSlowdown(Vec4 from, Vec4 to, Vec4 delta, float slowdown) {
+        return Vec4(
+            moveToWithSlowdown(from.x, to.x, delta.x, slowdown),
+            moveToWithSlowdown(from.y, to.y, delta.y, slowdown),
+            moveToWithSlowdown(from.z, to.z, delta.z, slowdown),
+            moveToWithSlowdown(from.w, to.w, delta.w, slowdown),
+        );
+    }
+}
+
+// Function test.
+unittest {
+    assert(sign(-69) == -1);
+    assert(sign(0) == 0);
+    assert(sign(420) == 1);
+    assert(sign(float.nan) == 0);
+
+    assert(min3(6, 9, 4) == 4);
+    assert(max3(6, 9, 4) == 9);
+    assert(min4(6, 9, 4, 20) == 4);
+    assert(max4(6, 9, 4, 20) == 20);
+
+    assert(clamp(1, 6, 9) == 6);
+    assert(clamp(6, 6, 9) == 6);
+    assert(clamp(8, 6, 9) == 8);
+    assert(clamp(9, 6, 9) == 9);
+    assert(clamp(11, 6, 9) == 9);
+
+    assert(wrap!uint(0, 0, 69) == 0);
+    assert(wrap!uint(1, 0, 69) == 1);
+    assert(wrap!uint(68, 0, 69) == 68);
+    assert(wrap!uint(69, 0, 69) == 0);
+
+    assert(wrap!uint(9, 9, 69) == 9);
+    assert(wrap!uint(10, 9, 69) == 10);
+    assert(wrap!uint(68, 9, 69) == 68);
+    assert(wrap!uint(69, 9, 69) == 9);
+    assert(wrap!uint(8, 9, 69) == 68);
+
+    assert(cast(int) round(wrap!float(0, 0, 69)) == 0);
+    assert(cast(int) round(wrap!float(1, 0, 69)) == 1);
+    assert(cast(int) round(wrap!float(68, 0, 69)) == 68);
+    assert(cast(int) round(wrap!float(69, 0, 69)) == 0);
+
+    assert(cast(int) round(wrap!float(9, 9, 69)) == 9);
+    assert(cast(int) round(wrap!float(10, 9, 69)) == 10);
+    assert(cast(int) round(wrap!float(68, 9, 69)) == 68);
+    assert(cast(int) round(wrap!float(69, 9, 69)) == 9);
+    assert(cast(int) round(wrap!float(8, 9, 69)) == 68);
+
+    assert(wrap!int(0, 0, 69) == 0);
+    assert(wrap!int(1, 0, 69) == 1);
+    assert(wrap!int(68, 0, 69) == 68);
+    assert(wrap!int(69, 0, 69) == 0);
+
+    assert(wrap!int(9, 9, 69) == 9);
+    assert(wrap!int(10, 9, 69) == 10);
+    assert(wrap!int(68, 9, 69) == 68);
+    assert(wrap!int(69, 9, 69) == 9);
+    assert(wrap!int(8, 9, 69) == 68);
+
+    assert(snap!int(0, 32) == 0);
+    assert(snap!int(-1, 32) == 0);
+    assert(snap!int(1, 32) == 0);
+    assert(snap!int(-31, 32) == -32);
+    assert(snap!int(-32, 32) == -32);
+    assert(snap!int(31, 32) == 32);
+    assert(snap!int(32, 32) == 32);
+
+    assert(cast(int) round(snap!float(0, 32)) == 0);
+    assert(cast(int) round(snap!float(-1, 32)) == 0);
+    assert(cast(int) round(snap!float(1, 32)) == 0);
+    assert(cast(int) round(snap!float(-31, 32)) == -32);
+    assert(cast(int) round(snap!float(-32, 32)) == -32);
+    assert(cast(int) round(snap!float(31, 32)) == 32);
+    assert(cast(int) round(snap!float(32, 32)) == 32);
+
+    assert(toRgb(0xff0000) == red);
+    assert(toRgb(0x00ff00) == green);
+    assert(toRgb(0x0000ff) == blue);
+    assert(toRgba(0xff0000ff) == red);
+    assert(toRgba(0x00ff00ff) == green);
+    assert(toRgba(0x0000ffff) == blue);
+}
+
+// Vec test.
+unittest {
+    alias V2 = IVec2;
+    auto v2 = V2(0, 1);
+    v2 = -(-v2);
+    v2 += V2(1);   v2 += 1;
+    v2 = v2 + V2(1);
+    v2 = v2 + 1;
+    v2 = 1 + v2;
+    v2 += V2(1);   v2 += 1;
+    assert(v2 == V2(7, 8) && !v2.isZero);
+
+    alias V3 = IVec3;
+    auto v3 = V3(0, 1, 2);
+    v3 = -(-v3);
+    v3 += V3(1);   v3 += 1;
+    v3 = v3 + V3(1);
+    v3 = v3 + 1;
+    v3 = 1 + v3;
+    v3 += V3(1);   v3 += 1;
+    assert(v3 == V3(7, 8, 9) && !v3.isZero);
+
+    alias V4 = IVec4;
+    auto v4 = V4(0, 1, 2, 3);
+    v4 = -(-v4);
+    v4 += V4(1);   v4 += 1;
+    v4 = v4 + V4(1);
+    v4 = v4 + 1;
+    v4 = 1 + v4;
+    v4 += V4(1);   v4 += 1;
+    assert(v4 == V4(7, 8, 9, 10) && !v4.isZero);
+}
+
+// Functions from the math.h header.
+private @trusted pragma(inline, true) {
+    version (JokaMathStubs) {
+        float stdc_asinf(float x)  => 0;
+        double stdc_asin(double x) => 0;
+        float stdc_acosf(float x)  => 0;
+        double stdc_acos(double x) => 0;
+        float stdc_atanf(float x)  => 0;
+        double stdc_atan(double x) => 0;
+        float stdc_atan2f(float y, float x) => 0;
+        double stdc_atan2(double y, double x) => 0;
+        float stdc_tanf(float x)  => 0;
+        double stdc_tan(double x) => 0;
+        float stdc_expf(float x)  => 0;
+        double stdc_exp(double x) => 0;
+        float stdc_exp2f(float x)  => 0;
+        double stdc_exp2(double x) => 0;
+        float stdc_logf(float x)  => 0;
+        double stdc_log(double x) => 0;
+        float stdc_log10f(float x)  => 0;
+        double stdc_log10(double x) => 0;
+        float stdc_log2f(float x)  => 0;
+        double stdc_log2(double x) => 0;
+        float stdc_powf(float base, float exp) => 0;
+        double stdc_pow(double base, double exp) => 0;
+        float stdc_sqrtf(float x)  => 0;
+        double stdc_sqrt(double x) => 0;
+
+        float stdc_remainderf(float x, float y) {
+            if (y == 0) return x;
+            auto q = x / y;
+            auto n = cast(int) (q >= 0 ? q + 0.5f : q - 0.5f);
+            return x - n * y;
+        }
+
+        double stdc_remainder(double x, double y) {
+            if (y == 0) return x;
+            auto q = x / y;
+            auto n = cast(long) (q >= 0 ? q + 0.5 : q - 0.5);
+            return x - n * y;
+        }
+
+        float stdc_fmodf(float x, float y)   => x - (cast(int) (x / y)) * y;
+        double stdc_fmod(double x, double y) => x - (cast(long) (x / y)) * y;
+
+        float stdc_sinf(float x) {
+            while (x > pi)  x -= 2.0f * pi;
+            while (x < -pi) x += 2.0f * pi;
+            auto term = x;
+            auto sinX = x;
+            auto x2 = x * x;
+            foreach (i; 1 .. 11) {
+                term *= -x2 / ((2.0f * i) * (2.0f * i + 1.0f));
+                sinX += term;
+            }
+            return sinX;
+        }
+
+        double stdc_sin(double x) {
+            while (x > pi)  x -= 2.0 * pi;
+            while (x < -pi) x += 2.0 * pi;
+            auto term = x;
+            auto sinX = x;
+            auto x2 = x * x;
+            foreach (i; 1 .. 11) {
+                term *= -x2 / ((2.0 * i) * (2.0 * i + 1.0));
+                sinX += term;
+            }
+            return sinX;
+        }
+
+        float stdc_cosf(float x) {
+            while (x > pi)  x -= 2.0f * pi;
+            while (x < -pi) x += 2.0f * pi;
+            auto term = 1.0f;
+            auto cosX = 1.0f;
+            auto x2 = x * x;
+            foreach (i; 1 .. 11) {
+                term *= -x2 / ((2.0f * i - 1.0f) * (2.0f * i));
+                cosX += term;
+            }
+            return cosX;
+        }
+
+        double stdc_cos(double x) {
+            while (x > pi)  x -= 2.0 * pi;
+            while (x < -pi) x += 2.0 * pi;
+            auto term = 1.0;
+            auto cosX = 1.0;
+            auto x2 = x * x;
+            foreach (i; 1 .. 11) {
+                term *= -x2 / ((2.0 * i - 1.0) * (2.0 * i));
+                cosX += term;
+            }
+            return cosX;
+        }
+
+        float stdc_ceilf(float x)  => basicCeil(x);
+        double stdc_ceil(double x) => basicCeil64(x);
+        float stdc_floorf(float x) => basicFloor(x);
+        double stdc_floor(double x) => basicFloor64(x);
+        float stdc_roundf(float x)  => basicRound(x);
+        double stdc_round(double x) => basicRound64(x);
+    } else {
+        extern(C) pragma(mangle, "asinf") float stdc_asinf(float x);
+        extern(C) pragma(mangle, "asin") double stdc_asin(double x);
+        extern(C) pragma(mangle, "acosf") float stdc_acosf(float x);
+        extern(C) pragma(mangle, "acos") double stdc_acos(double x);
+        extern(C) pragma(mangle, "atanf") float stdc_atanf(float x);
+        extern(C) pragma(mangle, "atan") double stdc_atan(double x);
+        extern(C) pragma(mangle, "atan2f") float stdc_atan2f(float y, float x);
+        extern(C) pragma(mangle, "atan2") double stdc_atan2(double y, double x);
+        extern(C) pragma(mangle, "tanf") float stdc_tanf(float x);
+        extern(C) pragma(mangle, "tan")  double stdc_tan(double x);
+        extern(C) pragma(mangle, "remainderf") float stdc_remainderf(float x, float y);
+        extern(C) pragma(mangle, "remainder")  double stdc_remainder(double x, double y);
+        extern(C) pragma(mangle, "fmodf") float stdc_fmodf(float x, float y);
+        extern(C) pragma(mangle, "fmod")  double stdc_fmod(double x, double y);
+        extern(C) pragma(mangle, "expf") float stdc_expf(float x);
+        extern(C) pragma(mangle, "exp")  double stdc_exp(double x);
+        extern(C) pragma(mangle, "exp2f") float stdc_exp2f(float x);
+        extern(C) pragma(mangle, "exp2")  double stdc_exp2(double x);
+        extern(C) pragma(mangle, "logf") float stdc_logf(float x);
+        extern(C) pragma(mangle, "log")  double stdc_log(double x);
+        extern(C) pragma(mangle, "log10f") float stdc_log10f(float x);
+        extern(C) pragma(mangle, "log10")  double stdc_log10(double x);
+        extern(C) pragma(mangle, "log2f") float stdc_log2f(float x);
+        extern(C) pragma(mangle, "log2")  double stdc_log2(double x);
+        extern(C) pragma(mangle, "powf") float stdc_powf(float base, float exp);
+        extern(C) pragma(mangle, "pow")  double stdc_pow(double base, double exp);
+        extern(C) pragma(mangle, "sqrtf") float stdc_sqrtf(float x);
+        extern(C) pragma(mangle, "sqrt")  double stdc_sqrt(double x);
+        extern(C) pragma(mangle, "sinf") float stdc_sinf(float x);
+        extern(C) pragma(mangle, "sin")  double stdc_sin(double x);
+        extern(C) pragma(mangle, "cosf") float stdc_cosf(float x);
+        extern(C) pragma(mangle, "cos")  double stdc_cos(double x);
+        extern(C) pragma(mangle, "ceilf") float stdc_ceilf(float x);
+        extern(C) pragma(mangle, "ceil")  double stdc_ceil(double x);
+        extern(C) pragma(mangle, "floorf") float stdc_floorf(float x);
+        extern(C) pragma(mangle, "floor")  double stdc_floor(double x);
+        extern(C) pragma(mangle, "roundf") float stdc_roundf(float x);
+        extern(C) pragma(mangle, "round")  double stdc_round(double x);
+    }
+}
