@@ -10,6 +10,7 @@ libraylib-d-template.a
 raylib-d-template.a
 raylib-d-template.lib
 raylib-d-template-test-*
+*shell.html
 *.exe
 *.pdb
 *.o
@@ -22,4 +23,4 @@ raylib-d-template-test-*
 index*
 game
 game_wasm
-build
+favicon.ico
