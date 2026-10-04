@@ -8,10 +8,6 @@
 /// The `types` module provides basic type definitions, compile-time functions and ASCII string helpers.
 module joka.types;
 
-version (WebAssembly) {
-    version = JokaTypesStubs;
-}
-
 alias Sz = size_t;    /// The result of sizeof.
 alias Pd = ptrdiff_t; /// The result of pointer math.
 
@@ -34,9 +30,14 @@ alias Gen       = uint;  /// The type of a generation.
 
 /// The type of compile time alias arguments.
 alias AliasArgs(A...) = A;
-
-/// Callback that can be used for basic printing. Should works like the echo command in POS*X compliant shells.
+/// Callback that can be used for basic printing. Should work like the `echo -n` command in POS*X compliant shells.
 alias EchonFunc = void function(IStr[] text...) @safe nothrow @nogc;
+/// Callback that can be used for basic printing. Should work like the `echo` command in POS*X compliant shells.
+alias EchoFunc = EchonFunc;
+/// The common bit set data type.
+alias BitSetCommonDataType = ulong;
+/// The common bit set type.
+alias BitSet = GBitSet!BitSetCommonDataType;
 
 enum kilobyte = 1024;            /// The size of one kilobyte in bytes.
 enum megabyte = 1024 * kilobyte; /// The size of one megabyte in bytes.
@@ -269,17 +270,11 @@ struct GBitSet(T) if (__traits(isUnsigned, T)) {
     }
 }
 
-/// The common bit set data type.
-alias BitSetCommonDataType = ulong;
-/// The common bit set type.
-alias BitSet = GBitSet!BitSetCommonDataType;
-
 /// Represents an optional value with an error code. Errors are referred to as faults in Joka.
 /// The default value is an empty value.
 struct Maybe(T) {
     Fault _fault = Fault.some;
     T _data;
-    alias isSome this;
 
     @safe nothrow @nogc:
 
@@ -386,7 +381,6 @@ struct Option(T) {
 
     static if (!isPtr) bool _isSome;
     T _data;
-    alias isSome this;
 
     @trusted nothrow @nogc:
 
@@ -484,7 +478,6 @@ struct Result(T, E, Sz tagSize = 0) {
 
     Tag _isSome;
     ResultUnion _data;
-    alias isSome this;
 
     @trusted nothrow @nogc:
 
@@ -878,6 +871,7 @@ bool isInAliasArgs(T, A...)() {
 }
 
 /// Returns the index of an item inside the given UDA arguments or -1 on error.
+@__ctfe
 template findInUdaArgs(T, alias member) {
     enum findInUdaArgs = () {
         auto result = -1;
@@ -891,6 +885,7 @@ template findInUdaArgs(T, alias member) {
 }
 
 /// Returns true if an item is inside the given UDA arguments.
+@__ctfe
 template isInUdaArgs(T, alias member) {
     enum isInUdaArgs = findInUdaArgs!(T, member) != -1;
 }
@@ -938,9 +933,7 @@ version (JokaCustomMemory) {
         private extern(C) pragma(mangle, "memcmp") @system nothrow @nogc int stdc_memcmp(const(void)* s1, const(void)* s2, size_t count) {
             auto p1 = cast(const(ubyte)*) s1;
             auto p2 = cast(const(ubyte)*) s2;
-            foreach (i; 0 .. count) {
-                if (p1[i] != p2[i]) return p1[i] - p2[i];
-            }
+            foreach (i; 0 .. count) if (p1[i] != p2[i]) return p1[i] - p2[i];
             return 0;
         }
     }
@@ -1159,15 +1152,19 @@ enum symbolChars   = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"; /// The set of symbol
 enum hexDigitChars = "0123456789abcdefABCDEF";             /// The set of hexadecimal numeric characters.
 
 version (Windows) {
-    enum pathSep         = '\\'; /// The primary OS path separator as a character.
-    enum pathSepStr      = "\\"; /// The primary OS path separator as a string.
-    enum pathSepOther    = '/';  /// The complementary OS path separator as a character.
-    enum pathSepOtherStr = "/";  /// The complementary OS path separator as a string.
+    enum pathSep         = '\\';   /// The primary OS path separator as a character.
+    enum pathSepStr      = "\\";   /// The primary OS path separator as a string.
+    enum pathSepOther    = '/';    /// The complementary OS path separator as a character.
+    enum pathSepOtherStr = "/";    /// The complementary OS path separator as a string.
+    enum eolStr          = "\r\n"; /// The primary OS End-of-Line string.
+    enum eolOtherStr     = "\n";   /// The complementary OS End-of-Line string.
 } else {
-    enum pathSep         = '/';  /// The primary OS path separator as a character.
-    enum pathSepStr      = "/";  /// The primary OS path separator as a string.
-    enum pathSepOther    = '\\'; /// The complementary OS path separator as a character.
-    enum pathSepOtherStr = "\\"; /// The complementary OS path separator as a string.
+    enum pathSep         = '/';    /// The primary OS path separator as a character.
+    enum pathSepStr      = "/";    /// The primary OS path separator as a string.
+    enum pathSepOther    = '\\';   /// The complementary OS path separator as a character.
+    enum pathSepOtherStr = "\\";   /// The complementary OS path separator as a string.
+    enum eolStr          = "\n";   /// The primary OS End-of-Line string.
+    enum eolOtherStr     = "\r\n"; /// The complementary OS End-of-Line string.
 }
 
 enum sp = Sep(" ");  /// Space separator.
@@ -1247,35 +1244,61 @@ template isInterLitType(TT) { enum isInterLitType = is(TT == InterpolatedLiteral
 template isInterExpType(TT) { enum isInterExpType = is(TT == InterpolatedExpression!_, alias _); }
 // === END IES Support
 
-/// Converts the value to its string representation.
+/// Converts the given value to a temporary string representation.
+/// Assume that the returned string will be invalid after the next call to this function.
+@trusted nothrow @nogc pure
+IStr toStr(IStr value) {
+    return value;
+}
+
+/// Converts the given value to a temporary string representation.
+/// Assume that the returned string will be invalid after the next call to this function.
 @trusted
 IStr toStr(T)(T value) {
     static assert(
-        !(is(T : const(A)[N], A, Sz N)), // !isArrayType
+        !(is(T : const(A)[N], A, Sz N)),
         "Static arrays can't be passed to `toStr`. This may also happen indirectly when using printing functions. Convert to a slice first."
     );
-    static if (is(T == enum)) { // isEnumType
-        return enumToStr(value);
-    } else static if (is(immutable(T) == immutable(char))) { // isCharType
-        return charToStr(value);
-    } else static if (is(immutable(T) == immutable(bool))) { // isBoolType
-        return boolToStr(value);
-    } else static if (__traits(isUnsigned, T)) { // isUnsignedType
-        return unsignedToStr(value);
-    } else static if (__traits(isIntegral, T)) { // isSignedType
-        return signedToStr(value);
-    } else static if (__traits(isFloating, T)) { // isFloating
-        return floatingToStr(value, 2);
-    } else static if (__traits(hasMember, T, "toStr")) {
+
+    static if (__traits(hasMember, T, "toStr")) {
         return value.toStr();
     } else static if (__traits(hasMember, T, "toString")) {
         return value.toString();
-    } else static if (is(T : IStr)) { // isStrType
-        return value;
-    } else static if (is(T : IStrz)) { // isStrzType
-        return strzToStr(value);
+    } else static if (is(T == enum)) {
+        return enumToStr(value);
+    } else static if (is(T == struct)) {
+        static if (T.tupleof.length == 0) {
+            return T.stringof;
+        } else {
+            static char[512] buffer = void;
+            IStr temp = void;
+
+            buffer[0] = '(';
+            auto bufferLength = Sz(1);
+            static foreach (i, member; T.tupleof) {
+                static if (is(typeof(T.tupleof[i]) : IStr)) buffer[bufferLength++] = '"';
+                temp = value.tupleof[i].toStr();
+                buffer[bufferLength .. bufferLength + temp.length] = temp;
+                bufferLength += temp.length;
+                static if (is(typeof(T.tupleof[i]) : IStr)) buffer[bufferLength++] = '"';
+                buffer[bufferLength++] = ' ';
+            }
+
+            buffer[bufferLength - 1] = ')';
+            return buffer[0 .. bufferLength];
+        }
+    } else static if (is(immutable(T) == immutable(char))) {
+        return charToStr(value);
+    } else static if (is(immutable(T) == immutable(bool))) {
+        return boolToStr(value);
+    } else static if (__traits(isUnsigned, T)) {
+        return unsignedToStr(value);
+    } else static if (__traits(isIntegral, T)) {
+        return signedToStr(value);
+    } else static if (__traits(isFloating, T)) {
+        return floatingToStr(value, 2);
     } else {
-        static assert(0, "Type doesn't implement the `toStr` function.");
+        static assert(0, "Type doesn't implement the `toStr` function or includes a slice as a member.");
     }
 }
 
@@ -1322,17 +1345,6 @@ byte _fmtBufferIndex = 0;
 /// Writes into the buffer and returns the formatted string.
 @trusted
 IStr fmtIntoBuffer(A...)(Str buffer, IStr fmtStr, A args) {
-    /*
-    // The old loop that got replaced.
-    // It has 3 lines in the static foreach. The current one has only 1 line.
-    Str tempSlice;
-    foreach (i, arg; args) {
-        tempSlice = _fmtIntoBufferDataBuffer[i][];
-        if (tempSlice.copyStr(arg.toStr())) return buffer[0 .. 0]; // "An argument did not fit in the internal temporary buffer."
-        _fmtIntoBufferSliceBuffer[i] = tempSlice;
-    }
-    */
-
     static assert(args.length <= defaultAsciiFmtArgBufferCount, "Too many format arguments.");
     foreach (i, ref dataBuffer; _fmtIntoBufferDataBuffer) {
         auto tempSlice = dataBuffer[];
@@ -1473,23 +1485,6 @@ IStr fmtFloatingGroup(IStr[] fmtStrs, double[] args...) {
             assert(0, "Argument count should be between 1 and 4.");
     }
 }
-
-/// Halts the program with a TODO message indicating unimplemented code.
-/// Debug builds: runtime assert. Release builds: runtime assert or compile-time error.
-noreturn debugTodo(bool errorInRelease = false)(IStr text, IStr file = __FILE__, Sz line = __LINE__) {
-    debug {
-        assert(0, "TODO({}:{}): {}".fmt(file, line, text));
-    } else {
-        static if (errorInRelease) {
-            static assert(0, "Can't have TODOs in release builds.");
-        } else {
-            assert(0, "TODO({}:{}): {}".fmt(file, line, text));
-        }
-    }
-}
-
-deprecated("Use `debugTodo`. The old name was too generic.")
-alias todo = debugTodo;
 
 pragma(inline, true) {
     /// Hashes a string using the FNV-1a algorithm with a 32-bit output.

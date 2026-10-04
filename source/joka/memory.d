@@ -5,20 +5,14 @@
 // Project: https://github.com/Kapendev/joka
 // ---
 
+// TODO: I need to write a style guide, or at least write down how attributes should be used.
+
 /// The `memory` module provides functions for dealing with memory and various general-purpose containers.
 /// `List`, `BufferList`, and `FixedList` are the "basic" containers.
 /// Most other containers can accept one of those to adjust their allocation strategy.
 module joka.memory;
 
 import joka.types;
-
-version (WASI) {
-    version = JokaMemoryStubs;
-} else version (WASM4) {
-    version = JokaMemoryStubs;
-}
-
-// --- Core
 
 MemoryContext __memoryContext;
 enum defaultJokaMemoryAlignment = 16;
@@ -329,6 +323,9 @@ void jokaFree(void* ptr, Sz oldSize = 0, IStr file = __FILE__, Sz line = __LINE_
 @trusted {
     /// Allocates memory for a value without initializing it.
     T* jokaMakeBlank(T)(IStr file = __FILE__, Sz line = __LINE__) {
+        version (JokaMallocOnly) {
+            static assert(0, "Templated single-allocation functions are disabled under `JokaMallocOnly`. Use `jokaMalloc` or containers.");
+        }
         return cast(T*) jokaMalloc(T.sizeof, file, line);
     }
 
@@ -738,21 +735,12 @@ unittest {
 
 @safe nothrow:
 
-enum defaultListCapacity = 8; /// The default list capacity. It is also the smallest list capacity.
+/// The default list capacity. It is also the smallest list capacity.
+enum defaultListCapacity = 8;
 
-alias LStr         = List!char;            /// A dynamic string of chars.
-alias BStr         = BufferList!char;      /// A dynamic string of chars backed by external memory.
-alias FStr(Sz N)   = FixedList!(char, N);  /// A dynamic string of chars allocated on the stack.
-
-// Some types are removed for compile-time reasons.
-/*
-alias LStr16       = List!wchar;           /// A dynamic string of wchars.
-alias LStr32       = List!dchar;           /// A dynamic string of dchars.
-alias BStr16       = BufferList!wchar;     /// A dynamic string of wchars backed by external memory.
-alias BStr32       = BufferList!dchar;     /// A dynamic string of dchars backed by external memory.
-alias FStr16(Sz N) = FixedList!(wchar, N); /// A dynamic string of wchars allocated on the stack.
-alias FStr32(Sz N) = FixedList!(dchar, N); /// A dynamic string of dchars allocated on the stack.
-*/
+alias LStr       = List!char;           /// A dynamic string of chars.
+alias BStr       = BufferList!char;     /// A dynamic string of chars backed by external memory.
+alias FStr(Sz N) = FixedList!(char, N); /// A dynamic string of chars allocated on the stack.
 
 /// A dynamic array.
 struct List(T) {
@@ -809,7 +797,7 @@ struct List(T) {
             auto rawPtr = capture.realloc(0, items.ptr, capacity * T.sizeof, targetCapacity * T.sizeof, file, line);
             if (rawPtr == null) return true;
             static if (isTrackingMemory) {
-                if (canIgnoreLeak) rawPtr.ignoreLeak();
+                if (canIgnoreLeak) rawPtr.ignoreLeak(); // TODO: This might be an issue with custom allocators? Think about it later.
             }
             capacity = targetCapacity;
             items = (cast(T*) rawPtr)[0 .. newLength];
@@ -934,6 +922,8 @@ struct List(T) {
             assert(0, "Cannot call `toStr` on `List!T` when `T` is not a `char`.");
         }
     }
+
+    alias toString = toStr;
 
     // NOTE: This is the `sliceOps` mixin. It was replaced with this to make compile-times faster.
     //   Original: mixin sliceOps!(List!T, T);
@@ -1117,6 +1107,8 @@ struct BufferList(T) {
         }
     }
 
+    alias toString = toStr;
+
     void free(IStr file = __FILE__, Sz line = __LINE__) {}
     void ignoreLeak() {}
     MemoryContext capture() { return MemoryContext(); }
@@ -1272,6 +1264,8 @@ struct FixedList(T, Sz N) {
             assert(0, "Cannot call `toStr` on `List!T` when `T` is not a `char`.");
         }
     }
+
+    alias toString = toStr;
 
     void free(IStr file = __FILE__, Sz line = __LINE__) {}
     void ignoreLeak() {}
@@ -1620,6 +1614,12 @@ struct GenList(T, D = SparseList!T, G = List!Gen) if (isGenContainerPartsValid!(
         foreach (id; ids) remove(id);
     }
 
+    @nogc
+    void clearAndResetGenerations() {
+        data.clear();
+        generations.clear();
+    }
+
     void free(IStr file = __FILE__, Sz line = __LINE__) {
         data.free(file, line);
         generations.free(file, line);
@@ -1930,14 +1930,14 @@ struct Grid(T, D = List!T) if (isBasicContainerType!D) {
             tiles[] = rhs;
         }
 
-        void opIndexAssign(T rhs, Sz row, Sz col) {
+        void opIndexAssign(const(T) rhs, Sz row, Sz col) {
             assert(has(row, col), gridIndexErrorMessage(row, col));
-            tiles[findGridIndex(row, col, colCount)] = rhs;
+            tiles[findGridIndex(row, col, colCount)] = cast(T) rhs;
         }
 
-        void opIndexOpAssign(IStr op)(T rhs, Sz row, Sz col) {
+        void opIndexOpAssign(IStr op)(const(T) rhs, Sz row, Sz col) {
             assert(has(row, col), gridIndexErrorMessage(row, col));
-            mixin("tiles[findGridIndex(row, col, colCount)]", op, "= rhs;");
+            mixin("tiles[findGridIndex(row, col, colCount)]", op, "= cast(T) rhs;");
         }
 
         Sz opDollar(Sz dim)() {
@@ -2501,6 +2501,10 @@ IStr sprintf(S = LStr, A...)(ref S buffer, InterpolationHeader header, A args, I
 /// Prints formatted text with a new line at the end to the given buffer.
 /// For details on formatting, see the `fmtIntoBuffer` function.
 IStr sprintfln(S = LStr, A...)(ref S buffer, IStr fmtStr, A args) {
+    version (JokaPrintfOnly) {
+        static assert(0, "Some `print`, `println`, and `printfln` style functions are disabled under `JokaPrintfOnly`. Use `printf` style functions.");
+    }
+
     auto text = sprintf(buffer, fmtStr, args);
     if (text.length == 0) return buffer[0 .. 0];
     static if (isStrContainerType!S) {
@@ -2544,6 +2548,10 @@ IStr sprintfln(S = LStr, A...)(ref S buffer, InterpolationHeader header, A args,
 
 /// Prints text to the given buffer.
 void sprint(S = LStr, A...)(ref S buffer, A args) {
+    version (JokaPrintfOnly) {
+        static assert(0, "Some `print`, `println`, and `printfln` style functions are disabled under `JokaPrintfOnly`. Use `printf` style functions.");
+    }
+
     static if (is(A[0] == Sep)) {
         foreach (i, arg; args[1 .. $]) {
             if (i) sprintf(buffer, "{}", args[0].value);
@@ -2556,6 +2564,10 @@ void sprint(S = LStr, A...)(ref S buffer, A args) {
 
 /// Prints text with a new line at the end to the given buffer.
 void sprintln(S = LStr, A...)(ref S buffer, A args) {
+    version (JokaPrintfOnly) {
+        static assert(0, "Some `print`, `println`, and `printfln` style functions are disabled under `JokaPrintfOnly`. Use `printf` style functions.");
+    }
+
     sprint(buffer, args);
     sprint(buffer, "\n");
 }

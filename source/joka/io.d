@@ -12,7 +12,10 @@ import joka.memory;
 import joka.types;
 
 // TODO: Should be changed with something better?
-version (WASI) {
+//   There could be a backend file like in Parin that has an IO interface.
+version (Emscripten) {
+    import stdc = joka.stdc;
+} else version (WASI) {
     version = ReadWriteFileIsEmpty;
     import wasi = joka.wasip1;
 } else version (WASM4) {
@@ -22,6 +25,7 @@ version (WASI) {
     import stdc = joka.stdc;
 }
 
+// NOTE: Looks like a bad idea, but anyway. Will change it maybe one day when I go do IO stuff and not game stuff.
 enum StdStream : ubyte {
     input,
     output,
@@ -32,7 +36,11 @@ enum StdStream : ubyte {
 @trusted nothrow @nogc
 void basicPrint(IStr text, StdStream stream = StdStream.output, Sz* writtenCount = null) {
     if (text.length == 0 || stream == StdStream.input) return;
-    version (WASI) {
+    version (Emscripten) {
+        auto targetStream = stream == StdStream.output ? stdc.stdout : stdc.stderr;
+        auto stdcBytes = stdc.fwrite(text.ptr, 1, text.length, targetStream);
+        if (writtenCount) *writtenCount = stdcBytes;
+    } else version (WASI) {
         auto targetStream = stream == StdStream.output ? wasi.stdout : wasi.stderr;
         auto wasiBytes = wasi.Size();
         auto wasiText = wasi.toCiovec(text);
@@ -90,11 +98,21 @@ void printf(StdStream stream = StdStream.output, A...)(InterpolationHeader heade
 /// For details on formatting, see the `fmtIntoBuffer` function.
 @trusted
 void printfln(StdStream stream = StdStream.output, A...)(IStr fmtStr, A args) {
+    version (JokaPrintfOnly) {
+        static assert(0, "Some `print`, `println`, and `printfln` style functions are disabled under `JokaPrintfOnly`. Use `printf` style functions.");
+    }
+
     auto text = fmtStr.fmt(args);
     auto textData = cast(Str) text.ptr[0 .. defaultAsciiFmtBufferSize];
-    if (text.length == textData.length) return;
-    textData[text.length] = '\n';
-    basicPrint(textData[0 .. text.length + 1], stream);
+    if (text.length >= textData.length - eolStr.length) return;
+    static if (eolStr.length == 1) {
+        textData[text.length] = eolStr[0];
+        basicPrint(textData[0 .. text.length + 1], stream);
+    } else {
+        textData[text.length] = eolStr[0];
+        textData[text.length + 1] = eolStr[1];
+        basicPrint(textData[0 .. text.length + 2], stream);
+    }
 }
 
 /// Prints formatted text with a new line at the end to stdout.
@@ -122,6 +140,10 @@ void printfln(StdStream stream = StdStream.output, A...)(InterpolationHeader hea
 
 /// Prints text to stdout.
 void print(StdStream stream = StdStream.output, A...)(A args) {
+    version (JokaPrintfOnly) {
+        static assert(0, "Some `print`, `println`, and `printfln` style functions are disabled under `JokaPrintfOnly`. Use `printf` style functions.");
+    }
+
     static if (is(A[0] == Sep)) {
         static foreach (i, arg; args[1 .. $]) {
             if (i) printf!stream("{}", args[0].value);
@@ -136,8 +158,12 @@ void print(StdStream stream = StdStream.output, A...)(A args) {
 
 /// Prints text with a new line at the end to stdout.
 void println(StdStream stream = StdStream.output, A...)(A args) {
+    version (JokaPrintfOnly) {
+        static assert(0, "Some `print`, `println`, and `printfln` style functions are disabled under `JokaPrintfOnly`. Use `printf` style functions.");
+    }
+
     print!stream(args);
-    print!stream("\n");
+    print!stream(eolStr);
 }
 
 /// Prints formatted text to stderr.
@@ -174,47 +200,19 @@ void eprintln(A...)(A args) {
     println!(StdStream.error)(args);
 }
 
-/// Prints values and their source location to stdout.
-void debugPrint(A)(A a, IStr file = __FILE__, Sz line = __LINE__) {
-    printf("DEBUG({}:{}):", file, line);
-    printf(" {}", a);
-    printf("\n");
-}
-
-/// Prints values and their source location to stdout.
-void debugPrint(A, B)(A a, B b, IStr file = __FILE__, Sz line = __LINE__) {
-    printf("DEBUG({}:{}):", file, line);
-    printf(" {}", a);
-    printf(" {}", b);
-    printf("\n");
-}
-
-/// Prints values and their source location to stdout.
-void debugPrint(A, B, C)(A a, B b, C c, IStr file = __FILE__, Sz line = __LINE__) {
-    printf("DEBUG({}:{}):", file, line);
-    printf(" {}", a);
-    printf(" {}", b);
-    printf(" {}", c);
-    printf("\n");
-}
-
-/// Prints values and their source location to stdout.
-void debugPrint(A, B, C, D)(A a, B b, C c, D d, IStr file = __FILE__, Sz line = __LINE__) {
-    printf("DEBUG({}:{}):", file, line);
-    printf(" {}", a);
-    printf(" {}", b);
-    printf(" {}", c);
-    printf(" {}", d);
-    printf("\n");
-}
-
-deprecated("Use `debugPrint`. The old name was too generic.")
-alias trace = debugPrint;
-
 /// Basic print function that can be used with types that have an `EchonFunc` field.
+/// Works like the `echo -n` command in POS*X compliant shells.
 @safe nothrow @nogc
 void echon(IStr[] text...) {
     foreach (part; text) basicPrint(part);
+}
+
+/// Basic print function that can be used with types that have an `EchonFunc` field.
+/// Works like the `echo` command in POS*X compliant shells.
+@safe nothrow @nogc
+void echo(IStr[] text...) {
+    echon(text);
+    echon(eolStr);
 }
 
 /// Reads an file in one go and store the data inside a buffer.

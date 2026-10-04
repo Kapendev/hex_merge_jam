@@ -12,13 +12,6 @@ import joka.memory;
 import joka.math;
 import joka.types;
 
-@safe nothrow @nogc:
-
-enum defaultStoryFixedListCapacity = 16;
-
-alias Palette(Sz N)    = StaticArray!(Rgba, N); /// A generic color palette of RGBA colors.
-alias HexPalette(Sz N) = uint[N];               /// A generic color palette of hexadecimal numbers.
-
 /// A 2-color palette inspired by the Playdate.
 /// Link: https://kapendev.itch.io/will-of-the-hair-wisp
 immutable HexPalette!2 wisp2 = [
@@ -68,6 +61,35 @@ immutable HexPalette!16 pico8 = [
     0xFF77A8,
     0xFFCCAA,
 ];
+
+/// A tile map.
+alias TileMap = GTileMap!128;
+/// A generic color palette of RGBA colors.
+alias Palette(Sz N)    = StaticArray!(Rgba, N);
+/// A generic color palette of hexadecimal numbers.
+alias HexPalette(Sz N) = uint[N];
+
+enum defaultStoryFixedListCapacity = 16;
+
+enum blank   = Rgba();              /// #00000000
+enum black   = Rgba(0);             /// #000000FF
+enum white   = Rgba(255);           /// #FFFFFFFF
+enum red     = Rgba(255, 0, 0);     /// #FF0000FF
+enum green   = Rgba(0, 255, 0);     /// #00FF00FF
+enum blue    = Rgba(0, 0, 255);     /// #0000FFFF
+enum yellow  = Rgba(255, 255, 0);   /// #FFFF00FF
+enum magenta = Rgba(255, 0, 255);   /// #FF00FFFF
+enum cyan    = Rgba(0, 255, 255);   /// #00FFFFFF
+enum pink    = Rgba(255, 192, 204); /// #FFC0CCFF
+enum orange  = Rgba(255, 165, 0);   /// #FFA500FF
+enum beige   = Rgba(240, 235, 210); /// #F0EBD2FF
+enum brown   = Rgba(165, 72, 42);   /// #A5482AFF
+enum maroon  = Rgba(128, 0, 0);     /// #800000FF
+enum gray1   = Rgba(32, 32, 32);    /// #202020FF
+enum gray2   = Rgba(96, 96, 96);    /// #606060FF
+enum gray3   = Rgba(159, 159, 159); /// #9F9F9FFF
+enum gray4   = Rgba(223, 223, 223); /// #DFDFDFFF
+enum gray    = gray2;               /// #606060FF
 
 /// A 2-color palette inspired by the Playdate.
 /// Link: https://kapendev.itch.io/will-of-the-hair-wisp
@@ -126,6 +148,8 @@ enum Flip : ubyte {
     y,    /// Flipped along the Y-axis.
     xy,   /// Flipped along both X and Y axes.
 }
+
+@safe nothrow @nogc:
 
 /// A tile with a texture atlas id, size, and position.
 struct Tile {
@@ -255,20 +279,20 @@ struct Tile {
 // Idea: Have an object map struct that just parses the csv again. Doing that is not slow anyway and keeps the TileMap focused.
 /// A generic tile map. `N` is the maximum layer row or column size.
 struct GTileMap(Sz N) {
-    enum maxLayerRowColCount = N;                                      /// Maximum layer row or column size.
-    enum maxLayerCapacity = maxLayerRowColCount * maxLayerRowColCount; /// Maximum layer size.
-    enum extraTileCount = 1;                                           /// Extra tile padding added when computing visible tile ranges.
-
-    alias TileMapLayerData = FixedList!(short, maxLayerCapacity);        /// The tile map layer data.
-    alias TileMapLayer = Grid!(TileMapLayerData.Item, TileMapLayerData); /// The tile map layer.
-    alias TileMapLayers = List!TileMapLayer;                             /// The tile map layers.
-
     TileMapLayers layers; /// The list of tile layers in this map.
     Sz rowCount;          /// The number of active rows in the map.
     Sz colCount;          /// The number of active columns in the map.
     short tileWidth;      /// The width of each tile in pixels.
     short tileHeight;     /// The height of each tile in pixels.
     Vec2 position;        /// The world position of the top-left corner of the map.
+
+    alias TileMapLayerData = FixedList!(short, maxLayerCapacity);            /// The tile map layer data.
+    alias TileMapLayer     = Grid!(TileMapLayerData.Item, TileMapLayerData); /// The tile map layer.
+    alias TileMapLayers    = List!TileMapLayer;                              /// The tile map layers.
+
+    enum maxLayerRowColCount = N;                                         /// Maximum layer row or column size.
+    enum maxLayerCapacity    = maxLayerRowColCount * maxLayerRowColCount; /// Maximum layer size.
+    enum extraTileCount      = 1;                                         /// Extra tile padding added when computing visible tile ranges.
 
     @safe nothrow:
 
@@ -645,9 +669,6 @@ struct GTileMap(Sz N) {
     }
 }
 
-/// A tile map.
-alias TileMap = GTileMap!128;
-
 /// A single sprite animation, defined by its position in an atlas and playback settings.
 struct SpriteAnimation {
     ubyte frameRow;   /// The atlas row this animation plays from.
@@ -884,10 +905,65 @@ struct Sprite {
     }
 }
 
+/// How to draw a sprite stack layer.
+enum SpriteStackDrawMode : ubyte {
+    pixelRowLayers,   /// This can be used to draw walls, or things that are 2D.
+    goxelLayers,      /// This can be used to draw stacks from Goxel.
+    magicaVoxelLayers /// This can be used to draw stacks from Magica Voxel.
+}
+
+/// A sprite stack.
+struct SpriteStack {
+    ubyte width;                  /// The width of the stack layer (atlas area).
+    ubyte height;                 /// The height of the stack later (atlas area).
+    ushort atlasLeft;             /// The X position on the atlas.
+    ushort atlasTop;              /// The Y position on the atlas.
+    SpriteStackDrawMode drawMode; /// The way to draw the layers.
+    ubyte layerCount;             /// The layer count of the stack. For `SpriteStackDrawMode.pixelRowLayers`, this should be equal to the height.
+    Vec2 position;                /// The position of the stack.
+    float rotation = 0.0f;        /// The rotation of the stack.
+}
+
+/// A helper for changing the color of sprite stack layers.
+struct SpriteStackLighting {
+    Vec3 floorColor     = Vec3(0.0f); /// The base color of the floor, from 0.0 to 1.0, in RGB.
+    Vec3 ceilingColor   = Vec3(1.0f); /// The base color of the ceiling, from 0.0 to 1.0, in RGB.
+    float minFactor     = 0.50f;      /// The minimum factor for the floor color.
+    float progressRange = 0.80f;      /// The range of the `lightingProgress`. See `makeColor` functions.
+    bool isActive       = false;      /// Used by the `*IfIsActive` functions.
+
+    @safe nothrow @nogc:
+
+    /// Returns a new color. Value `lightingProgress` should be between 0.0 and 1.0 (inclusive).
+    Rgba makeColor(float lightingProgress) {
+        auto lightingFactor = min(minFactor + lightingProgress * progressRange, 1.0f);
+        return Rgba(
+            cast(ubyte) (255 * (floorColor.x + (ceilingColor.x - floorColor.x) * lightingFactor)),
+            cast(ubyte) (255 * (floorColor.y + (ceilingColor.y - floorColor.y) * lightingFactor)),
+            cast(ubyte) (255 * (floorColor.z + (ceilingColor.z - floorColor.z) * lightingFactor)),
+        );
+    }
+
+    /// Returns a new color. The lighting progress is `layer / layerCount` for this function.
+    Rgba makeColor(uint layer, uint layerCount) {
+        return makeColor((cast(float) layer) / (layerCount - 1));
+    }
+
+    /// Returns a new color. Value `lightingProgress` should be between 0.0 and 1.0 (inclusive).
+    Rgba makeColorIfIsActive(float lightingProgress) {
+        return isActive ? makeColor(lightingProgress) : white;
+    }
+
+    /// Returns a new color. The lighting progress is `layer / layerCount` for this function.
+    Rgba makeColorIfIsActive(uint layer, uint layerCount) {
+        return isActive ? makeColor(layer, layerCount) : white;
+    }
+}
+
 /// A generic timer with pause/resume and repeat support.
-/// The `tickTimeFunc` alias must be a function that returns a `float` or `double` value.
+/// The `elapsedTickTimeFunc` alias must be a function that returns a `float` or `double` value.
 /// That value should be the elapsed time at the start of the current tick.
-struct GTimer(alias tickTimeFunc) {
+struct GTimer(alias elapsedTickTimeFunc) {
     float duration = 0.0f;                  /// The duration of the timer, in seconds.
     float pauseTime = 0.0f;                 /// The elapsed time when the timer was paused.
     float startTime = 0.0f;                 /// The elapsed time when the timer was started.
@@ -917,19 +993,19 @@ struct GTimer(alias tickTimeFunc) {
     /// Returns true if the timer has just started.
     bool hasStarted() {
         time(); // We need to update the state before checking.
-        return startTime.fequals(tickTimeFunc());
+        return startTime.fequals(elapsedTickTimeFunc());
     }
 
     /// Returns true if the timer has just stopped.
     bool hasStopped() {
         time(); // We need to update the state before checking.
-        return stopTimeElapsedTimeBuffer.fequals(tickTimeFunc());
+        return stopTimeElapsedTimeBuffer.fequals(elapsedTickTimeFunc());
     }
 
     /// Starts the timer with new duration and repeat behavior.
     void start(float newDuration, bool newCanRepeat) {
         if (newDuration >= 0.0f) duration = newDuration;
-        startTime = tickTimeFunc();
+        startTime = elapsedTickTimeFunc();
         stopTimeElapsedTimeBuffer = 0.0f;
         pauseTime = 0.0f;
         canRepeat = newCanRepeat;
@@ -943,7 +1019,7 @@ struct GTimer(alias tickTimeFunc) {
     /// Stops the timer and records the time at which it stopped.
     void stop() {
         startTime = 0.0f;
-        stopTimeElapsedTimeBuffer = tickTimeFunc();
+        stopTimeElapsedTimeBuffer = elapsedTickTimeFunc();
         pauseTime = 0.0f;
     }
 
@@ -962,7 +1038,7 @@ struct GTimer(alias tickTimeFunc) {
     /// Resumes the timer from the paused state.
     void resume() {
         if (!isActive || pauseTime == 0.0f) return;
-        startTime = tickTimeFunc() - pauseTime;
+        startTime = elapsedTickTimeFunc() - pauseTime;
         pauseTime = 0.0f;
     }
 
@@ -976,10 +1052,10 @@ struct GTimer(alias tickTimeFunc) {
     float time() {
         if (startTime == 0.0f) return 0.0f;
         if (pauseTime != 0.0f) return pauseTime;
-        auto result = max(tickTimeFunc() - startTime, 0.0f);
+        auto result = max(elapsedTickTimeFunc() - startTime, 0.0f);
         if (result >= duration) {
             stop();
-            if (canRepeat) startTime = tickTimeFunc();
+            if (canRepeat) startTime = elapsedTickTimeFunc();
         }
         result = min(result, duration);
         return result;
@@ -998,7 +1074,7 @@ struct GTimer(alias tickTimeFunc) {
     /// Sets the current time of the timer.
     /// If the given value is non-zero, the timer becomes active.
     void setTime(float newTime) {
-        startTime = max(tickTimeFunc() - newTime, 0.0f);
+        startTime = max(elapsedTickTimeFunc() - newTime, 0.0f);
         if (isPaused) {
             pauseTime = 0.0f;
             pauseTime = time;
