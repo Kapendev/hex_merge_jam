@@ -888,9 +888,13 @@ version (WebAssembly) {
     void emscripten_cancel_main_loop();
 }
 
-// -betterC trick.
+// A `-betterC` trick.
 version (D_BetterC) {
-    extern(C) void main() { ready(); }
+    extern(C) void main(int argc, char** argv) {
+        ready();
+    }
 } else {
-    void main() { ready(); }
+    void main() {
+        ready();
+    }
 }
